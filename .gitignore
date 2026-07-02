@@ -1,0 +1,5 @@
+venv/
+.env
+soseng.db
+__pycache__/
+*.pyc
