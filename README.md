@@ -86,29 +86,32 @@ soseang_app/
 
 ## 2단계: 설치 상태 검증하기
 터미널(CMD 또는 PowerShell)을 열고 아래 명령어를 입력하여 모든 개발 환경이 올바르게 잡혔는지 최종 점검합니다.
-
-Bash
+```bash
 flutter doctor
+```
 만약 [X] 표시가 뜬 항목이 있다면 화면의 안내 메시지에 따라 추가 설치를 진행하거나 라이선스 동의 명령어(flutter doctor --android-licenses)를 실행해 줍니다.
 
 ## 3단계: 소스코드 다운로드 및 브랜치 이동하기
 1. 프로젝트를 저장할 폴더에서 터미널을 열고 팀 원격 저장소를 클론(복제)합니다.
 
-Bash
+```bash
 git clone <팀_깃허브_레포지토리_주소>
 cd soseang_app
+```
 
 2. 다은이가(..ㅎ) 구글 AI OCR을 연동해 둔 모바일 앱 전용 작업 브랜치(feature/mobile-app)로 방을 이동합니다.
 
-Bash
+
+```bash
 git fetch origin
 git checkout feature/mobile-app
-
+```
 ## 4단계: 의존성 패키지 다운로드
 프로젝트 빌드에 필요한 외부 라이브러리들(Google ML Kit, Riverpod 상태관리, Image Picker 등)을 컴퓨터 환경에 맞게 로컬 캐시에 내려받습니다.
 
-Bash
+```bash
 flutter pub get
+```
 
 ## 5단계: 스마트폰 개발자 모드 활성화 및 연결
 1. 스마트폰 설정 (안드로이드 기준)
@@ -130,12 +133,14 @@ flutter pub get
 ## 6단계: 대망의 앱 실행하기
 1. 터미널 창에 아래 명령어를 입력해 PC에 스마트폰 기기가 정상 인식되었는지 고유 ID를 확인합니다.
 
-Bash
+```bash
 flutter devices
+```
 
 2. 확인된 디바이스 ID를 대입하여 스마트폰으로 앱을 실시간 조립 및 전송하여 실행합니다.
 
-Bash
+```bash
 flutter run -d <본인의_디바이스_ID>
+```
 
 최초 빌드 시에는 구글 온디바이스 NDK 부품 및 한글 OCR 팩을 네이티브단에 빌드하므로 몇 분 정도 시간이 소요될 수 있습니다. 정상 구동되면 스마트폰에 '소생 앱'이 자동으로 켜집니다.
