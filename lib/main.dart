@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'core/storage/app_storage.dart';
+import 'core/utils/masking_helper.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -93,9 +94,10 @@ class HomeScreen extends ConsumerWidget {
         ref.read(extractedTextProvider.notifier).state = "⚠️ 글자가 없는 이미지입니다.";
         ref.read(titleControllerProvider).text = "새로운 소생 카드";
       } else {
-        ref.read(extractedTextProvider.notifier).state = recognizedText.text;
+        final maskedText = MaskingHelper.mask(recognizedText.text);
+        ref.read(extractedTextProvider.notifier).state = maskedText;
         
-        List<String> lines = recognizedText.text.split('\n');
+        List<String> lines = maskedText.split('\n');
         if (lines.isNotEmpty) {
           ref.read(titleControllerProvider).text = lines.first;
           ref.read(contentControllerProvider).text = lines.skip(1).join('\n');
