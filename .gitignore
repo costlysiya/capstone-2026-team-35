@@ -48,3 +48,5 @@ app.*.map.json
 on_device_ai/venv/
 on_device_ai/src/__pycache__/
 on_device_ai/build/
+/venv/
+/dataset.csv
