@@ -17,7 +17,8 @@ INV_LABEL_MAP = {v: k for k, v in LABEL_MAP.items()}
 
 def train_and_convert():
     # 1. 데이터 및 전처리 가중치 획득
-    data_path = "data/sample_dataset.csv"
+    data_path = "data/train_dataset.csv" if os.path.exists("data/train_dataset.csv") else "data/sample_dataset.csv"
+    print(f"사용할 데이터셋 경로: {data_path}")
     cleaned_texts, svd_matrix, labels, vocab_dict, idf_list, svd_weights = build_preprocessing_pipeline(
         data_path=data_path,
         vocab_size=1000,
