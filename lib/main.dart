@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'; 
 import 'package:flutter_riverpod/legacy.dart'; 
@@ -103,20 +104,56 @@ class HomeScreen extends ConsumerWidget {
           ref.read(contentControllerProvider).text = lines.skip(1).join('\n');
         }
 
-        String lowerText = recognizedText.text;
-        
-        if (lowerText.contains('기프티콘') || lowerText.contains('쿠폰') || lowerText.contains('바코드') || lowerText.contains('교환권') || lowerText.contains('유효기간')) {
-          ref.read(selectedCategoryProvider.notifier).state = 0;    
-          ref.read(selectedSubCategoryProvider.notifier).state = 1; 
-        } else if (lowerText.contains('년') || lowerText.contains('월') || lowerText.contains('일') || lowerText.contains('시')) {
-          ref.read(selectedCategoryProvider.notifier).state = 0; 
-          ref.read(selectedSubCategoryProvider.notifier).state = 0; 
-        } else if (lowerText.contains('길') || lowerText.contains('로') || lowerText.contains('동')) {
-          ref.read(selectedCategoryProvider.notifier).state = 1; 
-        } else if (lowerText.contains('원') || lowerText.contains('가격')) {
-          ref.read(selectedCategoryProvider.notifier).state = 2; 
-        } else {
-          ref.read(selectedCategoryProvider.notifier).state = 3; 
+        // --- AI 분류 모델 로컬 서버 API 연동 ---
+        // 서버 연결에 실패하거나 타임아웃 발생 시, 기존의 키워드 룰베이스 분류기로 안전하게 폴백(Fallback)합니다.
+        try {
+          final dio = Dio();
+          // Mac mini의 로컬 IP 주소로 연동합니다. (동일 Wi-Fi 공유기 사용 필수)
+          // 기본 포트는 8000번입니다.
+          const serverUrl = 'http://172.30.1.30:8000/classify';
+          
+          final formData = FormData.fromMap({
+            'image': await MultipartFile.fromFile(image.path, filename: 'upload.png'),
+            'ocr_text': maskedText,
+          });
+
+          final response = await dio.post(serverUrl, data: formData).timeout(const Duration(seconds: 3));
+          
+          if (response.statusCode == 200 && response.data != null) {
+            final data = response.data;
+            final categoryIndex = data['category_index'] as int;
+            
+            ref.read(selectedCategoryProvider.notifier).state = categoryIndex;
+            
+            // 기프티콘 서브 카테고리 설정 (기존 플러터 UI 로직 유지)
+            if (categoryIndex == 0) {
+              if (maskedText.contains('기프티콘') || maskedText.contains('쿠폰') || maskedText.contains('바코드') || maskedText.contains('교환권')) {
+                ref.read(selectedSubCategoryProvider.notifier).state = 1;
+              } else {
+                ref.read(selectedSubCategoryProvider.notifier).state = 0;
+              }
+            }
+            print('🎯 AI 로컬 서버 분류 성공: ${data['category']} (Index: $categoryIndex)');
+          } else {
+            throw Exception('서버 응답 비정상');
+          }
+        } catch (e) {
+          print('⚠️ AI 로컬 서버 통신 실패 ($e). 기존 룰베이스 분류기로 폴백합니다.');
+          
+          String lowerText = recognizedText.text;
+          if (lowerText.contains('기프티콘') || lowerText.contains('쿠폰') || lowerText.contains('바코드') || lowerText.contains('교환권') || lowerText.contains('유효기간')) {
+            ref.read(selectedCategoryProvider.notifier).state = 0;    
+            ref.read(selectedSubCategoryProvider.notifier).state = 1; 
+          } else if (lowerText.contains('년') || lowerText.contains('월') || lowerText.contains('일') || lowerText.contains('시')) {
+            ref.read(selectedCategoryProvider.notifier).state = 0; 
+            ref.read(selectedSubCategoryProvider.notifier).state = 0; 
+          } else if (lowerText.contains('길') || lowerText.contains('로') || lowerText.contains('동')) {
+            ref.read(selectedCategoryProvider.notifier).state = 1; 
+          } else if (lowerText.contains('원') || lowerText.contains('가격')) {
+            ref.read(selectedCategoryProvider.notifier).state = 2; 
+          } else {
+            ref.read(selectedCategoryProvider.notifier).state = 3; 
+          }
         }
       }
       

@@ -30,7 +30,41 @@ class MaskingHelper {
     return (mrzCharsCount / clean.length) >= 0.80;
   }
 
+  // Removes system status bar (time, date, battery, carriers) at the very top of screenshots
+  static String _cleanStatusBar(String text) {
+    List<String> lines = text.split('\n');
+    List<String> cleanedLines = [];
+
+    final timePat = RegExp(r'\b\d{1,2}:\d{2}\b');
+    final datePat = RegExp(r'\d{1,2}월\s?\d{1,2}일');
+    final dayPat = RegExp(r'(월|화|수|목|금|토|일)요일');
+
+    for (int i = 0; i < lines.length; i++) {
+      final line = lines[i].trim();
+      // 이미지 최상단 1~2개 행에 대해서만 상단바 여부를 판정하여 스킵합니다.
+      if (i < 2) {
+        bool isStatusBar = line.length < 35 && (
+          timePat.hasMatch(line) || 
+          datePat.hasMatch(line) || 
+          dayPat.hasMatch(line) ||
+          line.contains('SKT') ||
+          line.contains('KT') ||
+          line.contains('LGU') ||
+          line.contains('U+')
+        );
+        if (isStatusBar) {
+          continue; // 상단바 정보 제외
+        }
+      }
+      cleanedLines.add(lines[i]);
+    }
+    return cleanedLines.join('\n');
+  }
+
   static String mask(String text) {
+    if (text.trim().isEmpty) return text;
+    
+    text = _cleanStatusBar(text);
     if (text.trim().isEmpty) return text;
 
     // 1. Identify document types by scanning the whole text
