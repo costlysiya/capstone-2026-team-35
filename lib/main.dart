@@ -35,7 +35,6 @@ final titleControllerProvider = Provider((ref) => TextEditingController());
 final contentControllerProvider = Provider((ref) => TextEditingController());
 final scheduleDateProvider = Provider((ref) => TextEditingController());   
 final placeLocationProvider = Provider((ref) => TextEditingController()); 
-final wishlistPriceProvider = Provider((ref) => TextEditingController());   
 
 // 전역 데이터 보관함
 final savedCardsProvider = StateProvider<List<Map<String, dynamic>>>((ref) => []);
@@ -64,7 +63,6 @@ class HomeScreen extends ConsumerWidget {
     ref.read(contentControllerProvider).clear();
     ref.read(scheduleDateProvider).clear();
     ref.read(placeLocationProvider).clear();
-    ref.read(wishlistPriceProvider).clear();
   }
 
   // 갤러리에서 대량 가져오기 (최대 50장)
@@ -74,10 +72,31 @@ class HomeScreen extends ConsumerWidget {
     
     if (images.isNotEmpty) {
       ref.read(pickedImagesProvider.notifier).state = images.take(50).toList();
-      ref.read(activeImageIndexProvider.notifier).state = 0; 
+      ref.read(activeImageIndexProvider.notifier).state = 0;
       ref.read(ocrStatusProvider.notifier).state = 'idle';
       ref.read(extractedTextProvider.notifier).state = '';
       _clearAllFields(ref);
+    }
+  }
+
+  // 현재 선택된 사진 1장만 대기열에서 삭제하는 기능
+  void _removeActiveImage(WidgetRef ref) {
+    final images = ref.read(pickedImagesProvider);
+    final activeIndex = ref.read(activeImageIndexProvider);
+
+    if (images.isEmpty) return;
+
+    final updatedImages = List<XFile>.from(images)..removeAt(activeIndex);
+    ref.read(pickedImagesProvider.notifier).state = updatedImages;
+    ref.read(ocrStatusProvider.notifier).state = 'idle';
+    _clearAllFields(ref);
+
+    if (updatedImages.isNotEmpty) {
+      if (activeIndex >= updatedImages.length) {
+        ref.read(activeImageIndexProvider.notifier).state = updatedImages.length - 1;
+      }
+    } else {
+      ref.read(activeImageIndexProvider.notifier).state = 0;
     }
   }
 
@@ -105,12 +124,9 @@ class HomeScreen extends ConsumerWidget {
         }
 
         // --- AI 분류 모델 로컬 서버 API 연동 ---
-        // 서버 연결에 실패하거나 타임아웃 발생 시, 기존의 키워드 룰베이스 분류기로 안전하게 폴백(Fallback)합니다.
         try {
           final dio = Dio();
-          // Mac mini의 로컬 IP 주소로 연동합니다. (동일 Wi-Fi 공유기 사용 필수)
-          // 기본 포트는 8000번입니다.
-          const serverUrl = 'http://172.30.1.30:8000/classify';
+          const serverUrl = 'http://192.168.45.107:8000/classify';
           
           final formData = FormData.fromMap({
             'image': await MultipartFile.fromFile(image.path, filename: 'upload.png'),
@@ -125,9 +141,8 @@ class HomeScreen extends ConsumerWidget {
             
             ref.read(selectedCategoryProvider.notifier).state = categoryIndex;
             
-            // 기프티콘 서브 카테고리 설정 (기존 플러터 UI 로직 유지)
             if (categoryIndex == 0) {
-              if (maskedText.contains('기프티콘') || maskedText.contains('쿠폰') || maskedText.contains('바코드') || maskedText.contains('교환권')) {
+              if (maskedText.contains('기프티콘') || maskedText.contains('쿠폰') || maskedText.contains('바코드') || maskedText.contains('교환권') || maskedText.contains('유효기간')) {
                 ref.read(selectedSubCategoryProvider.notifier).state = 1;
               } else {
                 ref.read(selectedSubCategoryProvider.notifier).state = 0;
@@ -139,20 +154,19 @@ class HomeScreen extends ConsumerWidget {
           }
         } catch (e) {
           print('⚠️ AI 로컬 서버 통신 실패 ($e). 기존 룰베이스 분류기로 폴백합니다.');
-          
           String lowerText = recognizedText.text;
           if (lowerText.contains('기프티콘') || lowerText.contains('쿠폰') || lowerText.contains('바코드') || lowerText.contains('교환권') || lowerText.contains('유효기간')) {
-            ref.read(selectedCategoryProvider.notifier).state = 0;    
+            ref.read(selectedCategoryProvider.notifier).state = 0;
             ref.read(selectedSubCategoryProvider.notifier).state = 1; 
           } else if (lowerText.contains('년') || lowerText.contains('월') || lowerText.contains('일') || lowerText.contains('시')) {
-            ref.read(selectedCategoryProvider.notifier).state = 0; 
+            ref.read(selectedCategoryProvider.notifier).state = 0;
             ref.read(selectedSubCategoryProvider.notifier).state = 0; 
           } else if (lowerText.contains('길') || lowerText.contains('로') || lowerText.contains('동')) {
-            ref.read(selectedCategoryProvider.notifier).state = 1; 
+            ref.read(selectedCategoryProvider.notifier).state = 1;
           } else if (lowerText.contains('원') || lowerText.contains('가격')) {
-            ref.read(selectedCategoryProvider.notifier).state = 2; 
+            ref.read(selectedCategoryProvider.notifier).state = 2;
           } else {
-            ref.read(selectedCategoryProvider.notifier).state = 3; 
+            ref.read(selectedCategoryProvider.notifier).state = 3;
           }
         }
       }
@@ -183,7 +197,6 @@ class HomeScreen extends ConsumerWidget {
     String extraInfo = "";
     if (categoryId == 0) extraInfo = ref.read(scheduleDateProvider).text;
     if (categoryId == 1) extraInfo = ref.read(placeLocationProvider).text;
-    if (categoryId == 2) extraInfo = ref.read(wishlistPriceProvider).text;
 
     // 기프티콘(0_1)과 위시리스트(2)만 갤러리 원본 스크린샷 사진 주소 저장
     String? finalImagePath;
@@ -230,7 +243,51 @@ class HomeScreen extends ConsumerWidget {
     }
   }
 
-  // ✨ [핵심 신설] 보관함 항목 클릭 시 띄워줄 아름다운 디테일 모달 팝업창 시스템
+  // 손가락으로 확대/축소(Pinch to Zoom)가 가능한 풀스크린 이미지 뷰어
+  void _showEnlargedImage(BuildContext context, String imagePath) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog.fullscreen(
+          backgroundColor: Colors.black,
+          child: Stack(
+            children: [
+              Center(
+                child: InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 4.0,
+                  child: Image.file(
+                    File(imagePath),
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 40,
+                right: 20,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ),
+              const Positioned(
+                bottom: 30,
+                left: 0,
+                right: 0,
+                child: Text(
+                  '💡 손가락 두 개로 확대 및 이동이 가능합니다.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // 보관함 항목 클릭 시 띄워줄 상세 디테일 모달 팝업창 시스템
   void _showCardDetail(BuildContext context, Map<String, dynamic> card, Map<String, dynamic> cardStyle) {
     showDialog(
       context: context,
@@ -242,29 +299,50 @@ class HomeScreen extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 1. 이미지 보관 조건부 렌더링 (기프티콘, 위시리스트만 상단 노출)
                 if (card['imagePath'] != null)
-                  Container(
-                    constraints: const BoxConstraints(maxHeight: 280),
-                    width: double.infinity,
-                    color: Colors.black12,
-                    child: ClipRRect(
-                      borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
-                      child: Image.file(
-                        File(card['imagePath']),
-                        width: double.infinity,
-                        fit: BoxFit.contain,
-                      ),
+                  GestureDetector(
+                    onTap: () => _showEnlargedImage(context, card['imagePath']),
+                    child: Stack(
+                      alignment: Alignment.bottomRight,
+                      children: [
+                        Container(
+                          constraints: const BoxConstraints(maxHeight: 280),
+                          width: double.infinity,
+                          color: Colors.black12,
+                          child: ClipRRect(
+                            borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
+                            child: Image.file(
+                              File(card['imagePath']),
+                              width: double.infinity,
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                        // ✨ [수정 완료] Colors.black.withOpacity(0.65) 로 정상 변경!
+                        Container(
+                          margin: const EdgeInsets.all(10),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.65),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.zoom_in, color: Colors.white, size: 14),
+                              SizedBox(width: 4),
+                              Text('터치하여 확대', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                
-                // 2. 텍스트 정보 본문 영역
                 Padding(
                   padding: const EdgeInsets.all(20.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 카테고리 태그 뱃지
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
@@ -281,35 +359,26 @@ class HomeScreen extends ConsumerWidget {
                         ),
                       ),
                       const SizedBox(height: 15),
-                      
-                      // 제목
                       Text(card['title'], style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 10),
                       const Divider(),
                       const SizedBox(height: 10),
-                      
-                      // 카테고리별 맞춤 정보 헤더 자동 판별 분기
                       if (card['extraInfo'].toString().isNotEmpty) ...[
                         Text(
                           card['categoryId'] == 0 && card['subCategoryId'] == 1
                               ? '⏳ 기프티콘 유효기간'
                               : card['categoryId'] == 0 ? '⏰ 일정 일시 설정'
-                              : card['categoryId'] == 1 ? '🗺️ 장소 주소 및 명칭'
-                              : '💵 아이템 소생 가격',
+                              : '🗺️ 장소 주소 및 명칭',
                           style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12),
                         ),
                         const SizedBox(height: 4),
                         Text(card['extraInfo'], style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: cardStyle['color'])),
                         const SizedBox(height: 15),
                       ],
-                      
-                      // 상세 파싱 본문 텍스트
                       const Text('📝 추출 상세 본문', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12)),
                       const SizedBox(height: 5),
                       Text(card['content'], style: const TextStyle(fontSize: 14, height: 1.4, color: Colors.black87)),
                       const SizedBox(height: 25),
-                      
-                      // 모달 닫기 확인 단추
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
@@ -348,7 +417,6 @@ class HomeScreen extends ConsumerWidget {
     final contentController = ref.watch(contentControllerProvider);
     final scheduleDateController = ref.watch(scheduleDateProvider);
     final placeLocationController = ref.watch(placeLocationProvider);
-    final wishlistPriceController = ref.watch(wishlistPriceProvider);
 
     final style = _getCategoryStyle(selectedCategory, subCategory: selectedCategory == 0 ? selectedSubCategory : 0);
 
@@ -464,7 +532,7 @@ class HomeScreen extends ConsumerWidget {
                         width: double.infinity,
                         height: 180,
                         decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.grey[300]!)),
-                        child: const Center(child: Text('소생할 스크린샷들을 선택해 주세요.\n(상세보기 마운트 완료)', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 13))),
+                        child: const Center(child: Text('소생할 스크린샷들을 선택해 주세요.\n(이미지 고화질 줌인 장착)', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 13))),
                       ),
                       const SizedBox(height: 20),
                       SizedBox(
@@ -481,7 +549,11 @@ class HomeScreen extends ConsumerWidget {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text('⏳ 소생 대기열 목록 (${pickedImages.length}장 남음)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.deepPurple)),
-                          TextButton(onPressed: () => ref.read(pickedImagesProvider.notifier).state = [], child: const Text('전체 취소', style: TextStyle(color: Colors.red, fontSize: 11)))
+                          TextButton.icon(
+                            onPressed: () => _removeActiveImage(ref),
+                            icon: const Icon(Icons.delete_outline, size: 14, color: Colors.red),
+                            label: const Text('이 사진 삭제', style: TextStyle(color: Colors.red, fontSize: 11)),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 5),
@@ -593,7 +665,7 @@ class HomeScreen extends ConsumerWidget {
                                 ),
                                 const SizedBox(height: 15),
                                 
-                                if (selectedCategory == 0) 
+                                if (selectedCategory == 0) ...[
                                   TextField(
                                     controller: scheduleDateController,
                                     decoration: InputDecoration(
@@ -602,17 +674,15 @@ class HomeScreen extends ConsumerWidget {
                                       prefixIcon: const Icon(Icons.access_time, color: Colors.blue)
                                     ),
                                   ),
-                                if (selectedCategory == 1) 
+                                  const SizedBox(height: 15),
+                                ],
+                                if (selectedCategory == 1) ...[
                                   TextField(
                                     controller: placeLocationController,
                                     decoration: const InputDecoration(labelText: '📍 장소 위치/주소 입력', border: OutlineInputBorder(), prefixIcon: Icon(Icons.pin_drop, color: Colors.teal)),
                                   ),
-                                if (selectedCategory == 2) 
-                                  TextField(
-                                    controller: wishlistPriceController,
-                                    decoration: const InputDecoration(labelText: '💵 아이템 가격 입력', border: OutlineInputBorder(), prefixIcon: Icon(Icons.monetization_on, color: Colors.pink)),
-                                  ),
-                                if (selectedCategory != 3) const SizedBox(height: 15),
+                                  const SizedBox(height: 15),
+                                ],
                                 
                                 TextField(
                                   controller: contentController,
@@ -693,7 +763,6 @@ class HomeScreen extends ConsumerWidget {
                                       ),
                                     ),
                                   ListTile(
-                                    // ✨ [핵심 연동] 이제 저장된 카드를 누르면 팝업창이 뜨도록 onTap을 추가했어!
                                     onTap: () => _showCardDetail(context, card, cardStyle),
                                     leading: CircleAvatar(
                                       backgroundColor: cardStyle['color'].withOpacity(0.15),
