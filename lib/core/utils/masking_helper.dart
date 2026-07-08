@@ -61,11 +61,125 @@ class MaskingHelper {
     return cleanedLines.join('\n');
   }
 
+  static String _normalizeGifticon(String text) {
+    final lines = text.split('\n');
+    
+    // 1. 유효기간 추출 (2자리 연도 YY.MM.DD 및 YY/MM/DD 포맷까지 대응)
+    String expiryDate = "";
+    final datePat1 = RegExp(r'\b(\d{2}|\d{4})[.\-/]\d{1,2}[.\-/]\d{1,2}\b');
+    final datePat2 = RegExp(r'(\d{2}|\d{4})년\s?\d{1,2}월\s?\d{1,2}일');
+    
+    final fullTextCleaned = text.replaceAll('\n', ' ');
+    final m1 = datePat1.firstMatch(fullTextCleaned);
+    if (m1 != null) {
+      expiryDate = m1.group(0)!;
+    } else {
+      final m2 = datePat2.firstMatch(fullTextCleaned);
+      if (m2 != null) {
+        expiryDate = m2.group(0)!;
+      }
+    }
+
+    // 2. 브랜드(교환처/사용처) 추출
+    String brand = "";
+    final exchangePat = RegExp(r'(교환처|사용처)\s*[:：]?\s*(.*)');
+    for (var line in lines) {
+      final m = exchangePat.firstMatch(line);
+      if (m != null) {
+        final val = m.group(2)!.trim();
+        if (val.isNotEmpty) {
+          brand = val;
+          break;
+        }
+      }
+    }
+
+    if (brand.isEmpty) {
+      const brands = [
+        '스타벅스', '배스킨라빈스', '투썸플레이스', '설빙', '메가커피', '이디야', '컴포즈',
+        '굽네치킨', '교촌치킨', 'bhc', 'bbq', '올리브영', '다이소', '이마트', '신세계',
+        'cu', 'gs25', '세븐일레븐', '요기요', '배달의민족', '아웃백', '공차', '던킨',
+        '파리바게뜨', '뚜레쥬르', '맥도날드', '롯데리아', '버거킹', '스타벅스커피'
+      ];
+      for (var b in brands) {
+        if (fullTextCleaned.toLowerCase().contains(b.toLowerCase())) {
+          brand = (b == 'bhc' || b == 'cu' || b == 'gs25' || b == 'bbq') ? b.toUpperCase() : b;
+          break;
+        }
+      }
+    }
+
+    // 3. 상품명 추출 (라벨 우선 탐색 및 후보군 필터링)
+    String productName = "";
+    final productNameRegex = RegExp(r'상품명\s*[:：]?\s*(.*)');
+    for (var line in lines) {
+      final m = productNameRegex.firstMatch(line);
+      if (m != null) {
+        final extracted = m.group(1)!.trim();
+        if (extracted.isNotEmpty) {
+          productName = extracted;
+          break;
+        }
+      }
+    }
+
+    if (productName.isEmpty) {
+      List<String> candidates = [];
+      final barcodePat = RegExp(r'\d{8,}');
+      final noticeKeywords = [
+        '유의사항', '사용안내', '바코드', '환불', '잔액', '매장', '교환', '고객센터', '주문번호',
+        '쿠폰번호', '발행일', '선물', '받은', '보낸', '결제', '쿠폰', '사용처', '교환처', '안내',
+        '원', '￦', '카카오톡', '선물하기', 'gifticon', 'coupon', '주문', '금액', '교환수량',
+        '수량', '개', '시럽'
+      ];
+
+      for (var line in lines) {
+        final clean = line.trim();
+        if (clean.isEmpty) continue;
+        
+        if (expiryDate.isNotEmpty && clean.contains(expiryDate)) continue;
+        if (brand.isNotEmpty && clean.toLowerCase().contains(brand.toLowerCase())) continue;
+        if (barcodePat.hasMatch(clean.replaceAll(RegExp(r'\s+|-'), ''))) continue;
+        
+        bool isNotice = false;
+        for (var kw in noticeKeywords) {
+          if (clean.toLowerCase().contains(kw)) {
+            isNotice = true;
+            break;
+          }
+        }
+        if (isNotice) continue;
+
+        if (clean.length >= 3 && clean.length <= 30) {
+          candidates.add(clean);
+        }
+      }
+
+      if (candidates.isNotEmpty) {
+        productName = candidates.first;
+      } else {
+        productName = "기프티콘 상품";
+      }
+    }
+
+    return '''[기프티콘]
+교환처: ${brand.isNotEmpty ? brand : "기타/교환처"}
+상품명: $productName
+유효기간: ${expiryDate.isNotEmpty ? expiryDate : "정보 없음"}''';
+  }
+
   static String mask(String text) {
     if (text.trim().isEmpty) return text;
     
     text = _cleanStatusBar(text);
     if (text.trim().isEmpty) return text;
+
+    final isGifticonText = _containsKeywords(text, ['기프티콘', '쿠폰', '바코드', '교환권', '모바일상품권', '모바일쿠폰', '선물하기', '교환처']) &&
+        _containsKeywords(text, ['유효기간', '사용기한', '유효', '기한', '기간', '까지', '만료']);
+
+    if (isGifticonText) {
+      return _normalizeGifticon(text);
+    }
 
     // 1. Identify document types by scanning the whole text
     // 여권 단어 외에도 하단 판독 영역의 '<' 패턴이 발견되면 여권으로 인식하도록 함
@@ -170,7 +284,7 @@ class MaskingHelper {
     }
 
     // --- 여권 맨 아래 판독 영역 (MRZ) 마스킹 (블록 매칭 방식) ---
-    // 첫 번째 줄과 두 번째 줄이 서로 인접해 있는 특성을 활용하여 꺾쇠(<)가 한쪽에만 있어도 세트로 마스킹 처리합니다.
+    // 첫 번째 줄 and 두 번째 줄이 서로 인접해 있는 특성을 활용하여 꺾쇠(<)가 한쪽에만 있어도 세트로 마스킹 처리합니다.
     for (int i = 0; i < lines.length; i++) {
       final line = lines[i];
       if (_isCandidateMrz(line)) {

@@ -27,26 +27,9 @@ SVD_DIM = 50  # 현재 데이터셋 크기(81개)를 고려하여 차원 수를 
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 print(f"🖥️ 활성화된 학습 디바이스: {device}")
 
-# 3. 텍스트 특징 추출기 학습 및 차원 축소 (TF-IDF + Truncated SVD)
-def build_text_features(df):
-    print("📝 텍스트 전처리 및 차원 축소(TF-IDF + SVD)를 실행합니다...")
-    # 결측치 빈 문자열 처리
-    df['extracted_text'] = df['extracted_text'].fillna('')
-    
-    # TF-IDF 벡터라이저 (한글 형태소 분석기 없이 띄어쓰기 기준으로 우선 생성)
-    vectorizer = TfidfVectorizer(max_features=5000, min_df=2)
-    tfidf_matrix = vectorizer.fit_transform(df['extracted_text'])
-    
-    # Truncated SVD 차원 축소
-    svd = TruncatedSVD(n_components=SVD_DIM, random_state=42)
-    svd_matrix = svd.fit_transform(tfidf_matrix)
-    
-    # 학습된 벡터라이저와 SVD 모델 저장 (추후 앱/서버 인퍼런스용)
-    with open(TEXT_PROCESSOR_PATH, 'wb') as f:
-        pickle.dump({'vectorizer': vectorizer, 'svd': svd}, f)
-    print(f"💾 텍스트 프로세서 저장 완료 -> {TEXT_PROCESSOR_PATH}")
-    
-    return svd_matrix
+# 3. 텍스트 특징 추출기 정의 (TF-IDF + Truncated SVD)
+# 데이터 누수(Data Leakage)를 방지하기 위해, fit은 학습용 데이터(train_df)에만 수행하고 검증용 데이터(val_df)는 transform만 수행합니다.
+
 
 # 4. PyTorch 커스텀 데이터셋 정의
 class MultimodalDataset(Dataset):
@@ -148,15 +131,32 @@ def main():
     df = pd.read_csv(CSV_PATH)
     print(f"📊 로드된 총 데이터 개수: {len(df)}")
     
-    # 2. 텍스트 특징 벡터 구축
-    svd_features = build_text_features(df)
+    # 결측치 빈 문자열 처리
+    df['extracted_text'] = df['extracted_text'].fillna('')
     
-    # 3. 데이터셋 분할 (학습 데이터: 검증 데이터 = 8:2)
-    # 데이터셋 크기가 매우 작은 초기 상태이므로 stratify 옵션 적용
-    train_df, val_df, train_svd, val_svd = train_test_split(
-        df, svd_features, test_size=0.2, random_state=42, stratify=df['label']
+    # 2. 데이터셋 분할 (학습 데이터: 검증 데이터 = 8:2)
+    # 데이터 누수(Data Leakage)를 방지하기 위해 텍스트 전처리 전에 분할을 먼저 실행합니다.
+    train_df, val_df = train_test_split(
+        df, test_size=0.2, random_state=42, stratify=df['label']
     )
     print(f"📈 학습 데이터: {len(train_df)}개, 검증 데이터: {len(val_df)}개")
+
+    # 3. 텍스트 특징 벡터 구축 (Train 데이터셋 기준 학습)
+    print("📝 텍스트 전처리 및 차원 축소(TF-IDF + SVD)를 실행합니다...")
+    vectorizer = TfidfVectorizer(max_features=5000, min_df=2)
+    train_tfidf = vectorizer.fit_transform(train_df['extracted_text'])
+    
+    svd = TruncatedSVD(n_components=SVD_DIM, random_state=42)
+    train_svd = svd.fit_transform(train_tfidf)
+    
+    # Validation 데이터셋 변환 (Fit 없이 Transform만 적용)
+    val_tfidf = vectorizer.transform(val_df['extracted_text'])
+    val_svd = svd.transform(val_tfidf)
+    
+    # 학습된 벡터라이저와 SVD 모델 저장 (인퍼런스용)
+    with open(TEXT_PROCESSOR_PATH, 'wb') as f:
+        pickle.dump({'vectorizer': vectorizer, 'svd': svd}, f)
+    print(f"💾 텍스트 프로세서 저장 완료 -> {TEXT_PROCESSOR_PATH}")
     
     # 4. 이미지 변환(Transform) 정의
     # MobileNet 규격인 224x224 크기로 이미지 리사이즈 및 정규화

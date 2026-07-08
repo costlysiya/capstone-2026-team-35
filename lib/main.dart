@@ -114,13 +114,41 @@ class HomeScreen extends ConsumerWidget {
         ref.read(extractedTextProvider.notifier).state = "⚠️ 글자가 없는 이미지입니다.";
         ref.read(titleControllerProvider).text = "새로운 소생 카드";
       } else {
+        print('🔍 [OCR Raw Text]\n${recognizedText.text}');
         final maskedText = MaskingHelper.mask(recognizedText.text);
+        print('🔍 [Masked Text]\n$maskedText');
         ref.read(extractedTextProvider.notifier).state = maskedText;
         
-        List<String> lines = maskedText.split('\n');
-        if (lines.isNotEmpty) {
-          ref.read(titleControllerProvider).text = lines.first;
-          ref.read(contentControllerProvider).text = lines.skip(1).join('\n');
+        if (maskedText.startsWith('[기프티콘]')) {
+          String brand = "";
+          String productName = "";
+          String expiryDate = "";
+          
+          for (var line in maskedText.split('\n')) {
+            if (line.startsWith('교환처: ')) {
+              brand = line.replaceFirst('교환처: ', '').trim();
+            } else if (line.startsWith('상품명: ')) {
+              productName = line.replaceFirst('상품명: ', '').trim();
+            } else if (line.startsWith('유효기간: ')) {
+              expiryDate = line.replaceFirst('유효기간: ', '').trim();
+            }
+          }
+          
+          ref.read(titleControllerProvider).text = 
+              brand.isNotEmpty && brand != "기타/교환처" ? "[$brand] $productName" : productName;
+          ref.read(contentControllerProvider).text = "교환처: $brand\n유효기간: $expiryDate";
+          
+          if (expiryDate.isNotEmpty && expiryDate != "정보 없음") {
+            ref.read(scheduleDateProvider).text = expiryDate;
+          } else {
+            ref.read(scheduleDateProvider).clear();
+          }
+        } else {
+          List<String> lines = maskedText.split('\n');
+          if (lines.isNotEmpty) {
+            ref.read(titleControllerProvider).text = lines.first;
+            ref.read(contentControllerProvider).text = lines.skip(1).join('\n');
+          }
         }
 
         // --- AI 분류 모델 로컬 서버 API 연동 ---
@@ -153,20 +181,80 @@ class HomeScreen extends ConsumerWidget {
             throw Exception('서버 응답 비정상');
           }
         } catch (e) {
-          print('⚠️ AI 로컬 서버 통신 실패 ($e). 기존 룰베이스 분류기로 폴백합니다.');
-          String lowerText = recognizedText.text;
-          if (lowerText.contains('기프티콘') || lowerText.contains('쿠폰') || lowerText.contains('바코드') || lowerText.contains('교환권') || lowerText.contains('유효기간')) {
-            ref.read(selectedCategoryProvider.notifier).state = 0;
-            ref.read(selectedSubCategoryProvider.notifier).state = 1; 
-          } else if (lowerText.contains('년') || lowerText.contains('월') || lowerText.contains('일') || lowerText.contains('시')) {
-            ref.read(selectedCategoryProvider.notifier).state = 0;
-            ref.read(selectedSubCategoryProvider.notifier).state = 0; 
-          } else if (lowerText.contains('길') || lowerText.contains('로') || lowerText.contains('동')) {
-            ref.read(selectedCategoryProvider.notifier).state = 1;
-          } else if (lowerText.contains('원') || lowerText.contains('가격')) {
-            ref.read(selectedCategoryProvider.notifier).state = 2;
-          } else {
-            ref.read(selectedCategoryProvider.notifier).state = 3;
+          print('⚠️ AI 로컬 서버 통신 실패 ($e). 스마트 로컬 룰베이스 분류기로 폴백합니다.');
+          final String lowerText = recognizedText.text.toLowerCase();
+          
+          int scheduleScore = 0;
+          int placeScore = 0;
+          int wishlistScore = 0;
+          int memoScore = 0;
+
+          // 1. SCHEDULE 키워드 점수화
+          final scheduleKeywords = [
+            '유효기간', '사용기한', '만료일', '까지', '예약', '구독', '결제일', '약속',
+            '오전', '오후', '내일', '모레', '이번주', '다음주', '출발', '도착', '탑승', 
+            '체크인', '마감', 'D-'
+          ];
+          for (var kw in scheduleKeywords) {
+            if (lowerText.contains(kw.toLowerCase())) scheduleScore += 2;
+          }
+          if (lowerText.contains('년') || lowerText.contains('월') || lowerText.contains('일')) scheduleScore += 1;
+          if (lowerText.contains('시') || lowerText.contains('분')) scheduleScore += 1;
+
+          // 2. PLACE 키워드 점수화
+          final placeKeywords = [
+            '맛집', '카페', '식당', '평점', '리뷰', '영업시간', '주소', '지도', 
+            '네이버지도', '카카오맵', '구글맵', '위치', '거리', '도보', '차량', '길찾기'
+          ];
+          for (var kw in placeKeywords) {
+            if (lowerText.contains(kw.toLowerCase())) placeScore += 2;
+          }
+          final addressSuffixes = ['역', '동', '길', '로', '구'];
+          for (var suffix in addressSuffixes) {
+            if (RegExp('$suffix\\b').hasMatch(lowerText) || RegExp('$suffix\\s').hasMatch(lowerText)) {
+              placeScore += 1;
+            }
+          }
+
+          // 3. WISHLIST 키워드 점수화
+          final wishlistKeywords = [
+            '원', '₩', '할인', '쿠팡', '네이버쇼핑', '장바구니', '사이즈', '배송', 
+            '무신사', '올리브영', '찜', '위시리스트', '품절', '재입고', '옵션', '할부', '적립', '포인트'
+          ];
+          for (var kw in wishlistKeywords) {
+            if (lowerText.contains(kw.toLowerCase())) wishlistScore += 2;
+          }
+
+          // 4. MEMO 키워드 점수화
+          final memoKeywords = [
+            '재료', '만드는 법', '조리', 'QR', '리디북스', '카카오페이지', '네이버시리즈', 
+            '웹소설', '체크리스트', '할 일', 'TODO', '메모', '참고', '기록', '출처', '제목', '챕터'
+          ];
+          for (var kw in memoKeywords) {
+            if (lowerText.contains(kw.toLowerCase())) memoScore += 2;
+          }
+
+          print('📊 로컬 분류 점수 - SCHEDULE: $scheduleScore, PLACE: $placeScore, WISHLIST: $wishlistScore, MEMO: $memoScore');
+
+          int finalCategory = 3; // 기본값 MEMO
+          int maxScore = 0;
+
+          // 동점인 경우 우선순위: SCHEDULE > PLACE > WISHLIST > MEMO
+          if (memoScore > maxScore) { maxScore = memoScore; finalCategory = 3; }
+          if (wishlistScore > maxScore) { maxScore = wishlistScore; finalCategory = 2; }
+          if (placeScore > maxScore) { maxScore = placeScore; finalCategory = 1; }
+          if (scheduleScore > maxScore) { maxScore = scheduleScore; finalCategory = 0; }
+
+          ref.read(selectedCategoryProvider.notifier).state = finalCategory;
+
+          if (finalCategory == 0) {
+            final isGifticon = ['기프티콘', '쿠폰', '바코드', '교환권', '모바일상품권', '모바일쿠폰', '선물하기', '교환처'].any((k) => lowerText.contains(k)) ||
+                               lowerText.contains('사용기한') || lowerText.contains('유효기간');
+            if (isGifticon) {
+              ref.read(selectedSubCategoryProvider.notifier).state = 1; // 기프티콘
+            } else {
+              ref.read(selectedSubCategoryProvider.notifier).state = 0; // 일반 일정
+            }
           }
         }
       }
