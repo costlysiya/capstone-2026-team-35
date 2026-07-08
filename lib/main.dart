@@ -30,7 +30,7 @@ final selectedSubCategoryProvider = StateProvider<int>((ref) => 0);
 // [사이드 메뉴 상태] 'home', 'cat_0_0'(일반일정), 'cat_0_1'(기프티콘), 'cat_1', 'cat_2', 'cat_3'
 final currentMenuProvider = StateProvider<String>((ref) => 'home');
 
-// ✍️ 입력 컨트롤러들 (위시리스트 가격 컨트롤러 삭제 완료)
+// ✍️ 입력 컨트롤러들
 final titleControllerProvider = Provider((ref) => TextEditingController());
 final contentControllerProvider = Provider((ref) => TextEditingController());
 final scheduleDateProvider = Provider((ref) => TextEditingController());   
@@ -243,6 +243,50 @@ class HomeScreen extends ConsumerWidget {
     }
   }
 
+  // 손가락으로 확대/축소(Pinch to Zoom)가 가능한 풀스크린 이미지 뷰어
+  void _showEnlargedImage(BuildContext context, String imagePath) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog.fullscreen(
+          backgroundColor: Colors.black,
+          child: Stack(
+            children: [
+              Center(
+                child: InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 4.0,
+                  child: Image.file(
+                    File(imagePath),
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 40,
+                right: 20,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ),
+              const Positioned(
+                bottom: 30,
+                left: 0,
+                right: 0,
+                child: Text(
+                  '💡 손가락 두 개로 확대 및 이동이 가능합니다.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   // 보관함 항목 클릭 시 띄워줄 상세 디테일 모달 팝업창 시스템
   void _showCardDetail(BuildContext context, Map<String, dynamic> card, Map<String, dynamic> cardStyle) {
     showDialog(
@@ -256,17 +300,42 @@ class HomeScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (card['imagePath'] != null)
-                  Container(
-                    constraints: const BoxConstraints(maxHeight: 280),
-                    width: double.infinity,
-                    color: Colors.black12,
-                    child: ClipRRect(
-                      borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
-                      child: Image.file(
-                        File(card['imagePath']),
-                        width: double.infinity,
-                        fit: BoxFit.contain,
-                      ),
+                  GestureDetector(
+                    onTap: () => _showEnlargedImage(context, card['imagePath']),
+                    child: Stack(
+                      alignment: Alignment.bottomRight,
+                      children: [
+                        Container(
+                          constraints: const BoxConstraints(maxHeight: 280),
+                          width: double.infinity,
+                          color: Colors.black12,
+                          child: ClipRRect(
+                            borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
+                            child: Image.file(
+                              File(card['imagePath']),
+                              width: double.infinity,
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                        // ✨ [수정 완료] Colors.black.withOpacity(0.65) 로 정상 변경!
+                        Container(
+                          margin: const EdgeInsets.all(10),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.65),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.zoom_in, color: Colors.white, size: 14),
+                              SizedBox(width: 4),
+                              Text('터치하여 확대', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 Padding(
@@ -463,7 +532,7 @@ class HomeScreen extends ConsumerWidget {
                         width: double.infinity,
                         height: 180,
                         decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.grey[300]!)),
-                        child: const Center(child: Text('소생할 스크린샷들을 선택해 주세요.\n(상세보기 마운트 완료)', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 13))),
+                        child: const Center(child: Text('소생할 스크린샷들을 선택해 주세요.\n(이미지 고화질 줌인 장착)', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 13))),
                       ),
                       const SizedBox(height: 20),
                       SizedBox(
@@ -596,7 +665,6 @@ class HomeScreen extends ConsumerWidget {
                                 ),
                                 const SizedBox(height: 15),
                                 
-                                // 카테고리별 맞춤 추가 정보 입력창
                                 if (selectedCategory == 0) ...[
                                   TextField(
                                     controller: scheduleDateController,
