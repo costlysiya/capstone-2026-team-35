@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 
 class MaskingHelper {
   // Checks if a string contains any keywords (case-insensitive)
@@ -350,5 +349,86 @@ class MaskingHelper {
     }
 
     return lines.join('\n');
+  }
+
+  static bool hasSensitivePatterns(String text) {
+    if (text.trim().isEmpty) return false;
+    
+    final lowerText = text.toLowerCase();
+    int score = 0;
+
+    // --- 1. RRN (주민등록번호) 검사 ---
+    final rrnHyphenRegex = RegExp(r'\b\d{6}-[1-4]\d{6}\b');
+    final rrnLooseRegex = RegExp(r'\b\d{6}\s?[1-4]\d{6}\b');
+    if (rrnHyphenRegex.hasMatch(text)) {
+      score += 10;
+    } else if (rrnLooseRegex.hasMatch(text)) {
+      score += 5;
+    }
+
+    // --- 2. 카드 번호 및 CVC 검사 ---
+    final cardHyphenRegex = RegExp(r'\b\d{4}-\d{4}-\d{4}-\d{4}\b');
+    final cardLooseRegex = RegExp(r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b');
+    if (cardHyphenRegex.hasMatch(text)) {
+      score += 10;
+    } else if (cardLooseRegex.hasMatch(text)) {
+      score += 5;
+    }
+    
+    final cvcRegex = RegExp(r'(cvc|cvv|보안코드|보안\s?카드)\s*[:.\-]?\s*([0-9]{3})\b', caseSensitive: false);
+    if (cvcRegex.hasMatch(text)) {
+      score += 8;
+    }
+
+    // --- 3. 휴대폰 번호 검사 ---
+    final phoneRegex = RegExp(r'\b010-\d{3,4}-\d{4}\b');
+    if (phoneRegex.hasMatch(text)) {
+      score += 5;
+    }
+
+    // --- 4. 계좌번호 검사 (날짜 포맷 제외 처리) ---
+    final accountRegex = RegExp(r'\b\d{3,6}-\d{2,6}-\d{3,6}\b');
+    final dateRegex = RegExp(r'\b\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}\b');
+    for (var match in accountRegex.allMatches(text)) {
+      final matchedStr = match.group(0)!;
+      // 만약 계좌번호로 검출된 텍스트가 날짜 패턴에 완전히 매칭된다면 점수 부여하지 않음 (오탐 방지)
+      if (!dateRegex.hasMatch(matchedStr)) {
+        score += 5;
+        break;
+      }
+    }
+
+    // --- 5. 여권 (Passport) 컨텍스트 매칭 ---
+    final hasPassportKeywords = ['여권', 'passport', '여권번호', 'passport no'].any((k) => lowerText.contains(k));
+    final hasPassportNo = RegExp(r'\b[A-Z]\s?[A-Z0-9]{8}\b', caseSensitive: false).hasMatch(text);
+    final hasMrzPattern = lowerText.contains('<<<<') || lowerText.contains('<<<');
+    
+    if (hasMrzPattern) {
+      score += 10;
+    } else if (hasPassportKeywords && hasPassportNo) {
+      score += 8;
+    }
+
+    // --- 6. 운전면허증 (Driver\'s License) 컨텍스트 매칭 ---
+    final hasLicenseKeywords = ['운전면허증', 'driver\'s license', 'driver’s license'].any((k) => lowerText.contains(k));
+    final hasLicenseNo = RegExp(r'\b\d{2}[-\s]?\d{2}[-\s]?\d{6}[-\s]?\d{2}\b').hasMatch(text);
+    if (hasLicenseKeywords && hasLicenseNo) {
+      score += 8;
+    }
+
+    // --- 7. 기프티콘 / 쿠폰 컨텍스트 매칭 ---
+    final hasGifticonKeywords = ['기프티콘', '쿠폰', '바코드', '교환권', '모바일상품권', '모바일쿠폰', '선물하기', '교환처'].any((k) => lowerText.contains(k));
+    final hasExpiryKeywords = ['사용기한', '유효기간', '만료일', '까지'].any((k) => lowerText.contains(k));
+    final hasCouponNo = RegExp(r'\b\d{12}\b|\b\d{14}\b|\b\d{16}\b').hasMatch(text);
+    final hasDatePattern = RegExp(r'\b(\d{2}|\d{4})[.\-/]\d{1,2}[.\-/]\d{1,2}\b').hasMatch(text) ||
+                           RegExp(r'\b(\d{2}|\d{4})년\s?\d{1,2}월\s?\d{1,2}일\b').hasMatch(text);
+
+    // 단순 단어가 아니라, 기프티콘 키워드와 바코드 번호 혹은 유효기간 정보가 복합적으로 있을 때만 점수 가산
+    if (hasGifticonKeywords && (hasCouponNo || (hasExpiryKeywords && hasDatePattern))) {
+      score += 6;
+    }
+
+    print('🛡️ 민감 정보 평가 점수: $score (임계값: 5)');
+    return score >= 5;
   }
 }
