@@ -11,13 +11,15 @@ class ScreenshotType(str, Enum):
 class AnalyzeRequest(BaseModel):
     """앱 → 서버 요청"""
     ocr_text: str
+    type: ScreenshotType | None = None  # 앱에서 로컬 분류한 타입 (없으면 서버가 LLM으로 분류)
     masked_tokens: list[str] = []
 
     class Config:
         json_schema_extra = {
             "example": {
                 "ocr_text": "[기프티콘] 스타벅스 아메리카노\n유효기간: 2026.08.15",
-                "masked_tokens": ["MASKED_CARD"]
+                "type": "SCHEDULE",
+                "masked_tokens": []
             }
         }
 

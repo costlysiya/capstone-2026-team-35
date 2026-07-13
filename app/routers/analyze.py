@@ -101,11 +101,19 @@ def analyze_v2(request: AnalyzeRequest):
         request.ocr_text = clean_text
 
     # === 1단계: 분류 ===
-    classify_result = call_llm(
-        system_prompt=CLASSIFY_PROMPT,
-        user_text=request.ocr_text
-    )
-    detected_type = classify_result.get("type", "MEMO")
+    # 앱에서 로컬로 타입을 확정해서 보내주면 LLM 분류 생략 (API 비용 절감!)
+    if request.type:
+        detected_type = request.type.value
+        classify_confidence = 1.0  # 로컬 분류는 신뢰도 1.0
+        logger.info(f"[v2] 로컬 분류 사용: {detected_type}")
+    else:
+        classify_result = call_llm(
+            system_prompt=CLASSIFY_PROMPT,
+            user_text=request.ocr_text
+        )
+        detected_type = classify_result.get("type", "MEMO")
+        classify_confidence = classify_result.get("confidence", 0)
+        logger.info(f"[v2] LLM 분류: {detected_type} (신뢰도: {classify_confidence})")
     
     # === 2단계: 타입별 상세 추출 ===
     extract_result = call_llm(
@@ -122,7 +130,7 @@ def analyze_v2(request: AnalyzeRequest):
     # 결과 합치기
     final = {
         "type": detected_type,
-        "confidence": classify_result.get("confidence", 0),
+        "confidence": classify_confidence,
         "fields": extracted_fields,
         "missing_fields": extract_result.get("missing_fields", [])
     }
