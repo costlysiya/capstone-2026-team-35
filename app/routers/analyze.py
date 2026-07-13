@@ -83,6 +83,23 @@ def analyze_screenshot(request: AnalyzeRequest):
 def analyze_v2(request: AnalyzeRequest):
     """2단계 분석: 분류 → 타입별 상세 추출"""
     
+    # 🛡️ 입력 검증: 너무 짧은 텍스트
+    clean_text = request.ocr_text.strip()
+    if len(clean_text) < 3:
+        return AnalyzeResponse(
+            id=None,
+            type="MEMO",
+            confidence=0.0,
+            fields={"body": clean_text} if clean_text else {},
+            missing_fields=["텍스트가 너무 짧습니다 (3자 이상 필요)"],
+            status="NEEDS_EDIT"
+        )
+
+    # 🛡️ 입력 검증: 너무 긴 텍스트 (LLM 토큰 제한 방지)
+    if len(clean_text) > 5000:
+        clean_text = clean_text[:5000]
+        request.ocr_text = clean_text
+
     # === 1단계: 분류 ===
     classify_result = call_llm(
         system_prompt=CLASSIFY_PROMPT,
