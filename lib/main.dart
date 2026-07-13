@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'; 
@@ -310,12 +311,21 @@ class HomeScreen extends ConsumerWidget {
       final dio = Dio();
       const serverUrl = 'http://172.30.1.84:8000/api/analyze/v2';
       
+      final localCategoryIndex = ref.read(selectedCategoryProvider);
+      final indexToType = {
+        0: 'SCHEDULE',
+        1: 'PLACE',
+        2: 'WISHLIST',
+        3: 'MEMO',
+      };
+      final localType = indexToType[localCategoryIndex] ?? 'MEMO';
+
       final response = await dio.post(
         serverUrl,
         data: {
           'ocr_text': maskedText,
+          'type': localType, // 로컬 AI 분류 결과를 필수 전송
           'masked_tokens': <String>[],
-          'type': null, // 필요 시 로컬 분류 타입 전송 가능 (여기서는 null을 주어 서버 LLM 분류를 유도)
         },
         options: Options(contentType: 'application/json'),
       ).timeout(const Duration(seconds: 3));
@@ -334,6 +344,10 @@ class HomeScreen extends ConsumerWidget {
         final categoryIndex = typeToIndex[typeStr] ?? 3;
         ref.read(selectedCategoryProvider.notifier).state = categoryIndex;
         
+        // 상세 본문 수정 부분에 서버에서 가져온 json정보를 포맷팅하여 주입
+        final prettyJson = const JsonEncoder.withIndent('  ').convert(fields);
+        ref.read(contentControllerProvider).text = prettyJson;
+
         // 1. SCHEDULE 매핑
         if (categoryIndex == 0) {
           final subType = fields['sub_type'] as String?;
@@ -347,14 +361,7 @@ class HomeScreen extends ConsumerWidget {
           
           final expiryDate = fields['expires_at'] as String?;
           final startDate = fields['start_at'] as String?;
-          
-          if (isGifticon) {
-            ref.read(contentControllerProvider).text = "교환처: ${fields['exchange_place'] ?? '정보 없음'}\n유효기간: ${expiryDate ?? '정보 없음'}";
-            ref.read(scheduleDateProvider).text = expiryDate ?? '';
-          } else {
-            ref.read(contentControllerProvider).text = fields['description'] ?? '일정 정보';
-            ref.read(scheduleDateProvider).text = startDate ?? expiryDate ?? '';
-          }
+          ref.read(scheduleDateProvider).text = expiryDate ?? startDate ?? '';
         }
         // 2. PLACE 매핑
         else if (categoryIndex == 1) {
@@ -364,7 +371,6 @@ class HomeScreen extends ConsumerWidget {
           }
           ref.read(titleControllerProvider).text = placeFields['name'] ?? '새로운 장소';
           ref.read(placeLocationProvider).text = placeFields['address'] ?? placeFields['region'] ?? '';
-          ref.read(contentControllerProvider).text = "상호명: ${placeFields['name'] ?? ''}\n주소: ${placeFields['address'] ?? ''}\n영업시간: ${placeFields['hours'] ?? ''}";
         }
         // 3. WISHLIST 매핑
         else if (categoryIndex == 2) {
@@ -372,14 +378,11 @@ class HomeScreen extends ConsumerWidget {
           if (fields['items'] != null && (fields['items'] as List).isNotEmpty) {
             itemFields = (fields['items'] as List).first as Map<String, dynamic>;
           }
-          final price = itemFields['price_amount'] != null ? "${itemFields['price_amount']}원" : "";
           ref.read(titleControllerProvider).text = itemFields['product_name'] ?? '새로운 위시 상품';
-          ref.read(contentControllerProvider).text = "상품명: ${itemFields['product_name'] ?? ''}\n가격: $price\n판매처: ${itemFields['seller'] ?? ''}";
         }
         // 4. MEMO 매핑
         else if (categoryIndex == 3) {
           ref.read(titleControllerProvider).text = fields['title'] ?? '새로운 메모';
-          ref.read(contentControllerProvider).text = fields['body'] ?? '';
         }
 
         print('🎯 AI 로컬 서버 분류 성공: $typeStr (Index: $categoryIndex)');
