@@ -32,11 +32,11 @@ def _validate_single_item(item: dict, result_type: str) -> list[str]:
 
     # 타입별 특수 검증
     if result_type == "SCHEDULE":
-        if "expires_at" not in item and "start_at" not in item:
+        if not item.get("expires_at") and not item.get("start_at"):
             missing.append("expires_at 또는 start_at")
 
     if result_type == "PLACE":
-        if "name" not in item and "region" not in item:
+        if not item.get("name") and not item.get("region"):
             missing.append("name 또는 region")
 
     return missing
