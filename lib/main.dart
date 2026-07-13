@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'; 
 import 'package:flutter_riverpod/legacy.dart'; 
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'core/storage/app_storage.dart';
 import 'core/utils/masking_helper.dart';
@@ -102,6 +103,28 @@ class HomeScreen extends ConsumerWidget {
     } else {
       ref.read(activeImageIndexProvider.notifier).state = 0;
     }
+  }
+
+  Future<XFile?> _cropImage(BuildContext context, String filePath) async {
+    final croppedFile = await ImageCropper().cropImage(
+      sourcePath: filePath,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: '이미지 자르기',
+          toolbarColor: Theme.of(context).colorScheme.primary,
+          toolbarWidgetColor: Colors.white,
+          initAspectRatio: CropAspectRatioPreset.original,
+          lockAspectRatio: false,
+        ),
+        IOSUiSettings(
+          title: '이미지 자르기',
+        ),
+      ],
+    );
+    if (croppedFile != null) {
+      return XFile(croppedFile.path);
+    }
+    return null;
   }
 
   // 단수 이미지 OCR 추출 (기본 텍스트 매핑만 수행, 서버 전송 없음)
@@ -893,11 +916,42 @@ class HomeScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 15),
 
-                      Container(
-                        width: double.infinity,
-                        height: 220,
-                        decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(12)),
-                        child: ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.file(File(pickedImages[activeIndex].path), fit: BoxFit.contain)),
+                      Stack(
+                        children: [
+                          Container(
+                            width: double.infinity,
+                            height: 220,
+                            decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(12)),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.file(File(pickedImages[activeIndex].path), fit: BoxFit.contain),
+                            ),
+                          ),
+                          Positioned(
+                            right: 8,
+                            bottom: 8,
+                            child: ElevatedButton.icon(
+                              onPressed: () async {
+                                final cropped = await _cropImage(context, pickedImages[activeIndex].path);
+                                if (cropped != null) {
+                                  final list = [...pickedImages];
+                                  list[activeIndex] = cropped;
+                                  ref.read(pickedImagesProvider.notifier).state = list;
+                                  ref.read(ocrStatusProvider.notifier).state = 'idle';
+                                }
+                              },
+                              icon: const Icon(Icons.crop, size: 14),
+                              label: const Text('사진 자르기', style: TextStyle(fontSize: 10)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.black.withValues(alpha: 0.6),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 15),
 
