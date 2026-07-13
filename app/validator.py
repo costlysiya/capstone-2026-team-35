@@ -82,3 +82,29 @@ def validate_result(result: dict) -> dict:
         result["status"] = "DRAFT"           # 정상 초안
 
     return result
+
+
+def revalidate_after_edit(result: dict, edited_fields: dict) -> dict:
+    """
+    사용자가 수정한 필드를 반영하고 다시 검증.
+    수정 후에는 누락 필드가 채워졌을 수 있으므로 상태를 재판단.
+    """
+    # 기존 필드에 수정 사항 병합
+    current_fields = result.get("fields", {})
+
+    if "items" in current_fields and isinstance(current_fields["items"], list):
+        # 복수 항목인 경우: edited_fields에 items가 있으면 그대로 교체
+        if "items" in edited_fields:
+            current_fields["items"] = edited_fields["items"]
+        else:
+            # items가 아닌 경우, 각 항목에 공통 수정 적용
+            for item in current_fields["items"]:
+                item.update(edited_fields)
+    else:
+        # 단일 항목인 경우: 바로 덮어쓰기
+        current_fields.update(edited_fields)
+
+    result["fields"] = current_fields
+
+    # 재검증
+    return validate_result(result)

@@ -5,6 +5,7 @@ from app.database import (
 )
 from app.schemas import ResultConfirmRequest
 import json
+from app.validator import revalidate_after_edit
 
 router = APIRouter(prefix="/api/results", tags=["결과"])
 
@@ -57,31 +58,47 @@ def get_result(id: int):
 def update_result(id: int, request: ResultConfirmRequest):
     """
     사용자가 초안 카드의 필드를 수정.
-    수정 후 상태를 CONFIRMED로 변경.
+    재검증 후 상태를 자동 결정 (DRAFT / NEEDS_EDIT / CONFIRMED).
     """
     existing = get_result_by_id(id)
     if not existing:
         raise HTTPException(status_code=404, detail=f"결과 #{id}을(를) 찾을 수 없습니다")
 
     if request.edited_fields:
-        # 기존 fields에 수정 사항을 병합
+        # 기존 결과 복원
         current_fields = {}
         if isinstance(existing.get("fields"), str):
             try:
                 current_fields = json.loads(existing["fields"])
             except json.JSONDecodeError:
                 current_fields = {}
-        elif isinstance(existing.get("fields"), dict):
-            current_fields = existing["fields"]
 
-        # 수정된 필드 덮어쓰기 (기존 값 유지 + 변경분 반영)
-        current_fields.update(request.edited_fields)
-        update_fields(id, json.dumps(current_fields, ensure_ascii=False))
+        # 재검증 실행
+        result_for_validate = {
+            "type": existing["type"],
+            "confidence": existing["confidence"],
+            "fields": current_fields
+        }
+        validated = revalidate_after_edit(result_for_validate, request.edited_fields)
 
-    # 수정 후 승인 처리
+        # DB 업데이트
+        update_fields(id, json.dumps(validated["fields"], ensure_ascii=False))
+
+        # 검증 통과하면 CONFIRMED, 아니면 validator가 정한 상태
+        if not validated.get("missing_fields"):
+            update_status(id, "CONFIRMED")
+        else:
+            update_status(id, validated.get("status", "NEEDS_EDIT"))
+
+        return {
+            "message": f"결과 #{id} 수정 완료",
+            "status": validated.get("status", "CONFIRMED"),
+            "missing_fields": validated.get("missing_fields", [])
+        }
+
+    # 수정 없이 승인만
     update_status(id, "CONFIRMED")
-
-    return {"message": f"결과 #{id}이(가) 수정 및 승인되었습니다"}
+    return {"message": f"결과 #{id}이(가) 승인되었습니다", "status": "CONFIRMED"}
 
 
 @router.post("/{id}/confirm")
