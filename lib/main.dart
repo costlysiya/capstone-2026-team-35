@@ -27,6 +27,10 @@ final selectedCategoryProvider = StateProvider<int>((ref) => 3);
 // 일정 카테고리 내부 세부 분류 (0: 일반 일정, 1: 기프티콘)
 final selectedSubCategoryProvider = StateProvider<int>((ref) => 0);
 
+// AI 분석에서 응답받은 원본 가변 필드들 및 다중 항목 페이징 상태
+final aiResponseFieldsProvider = StateProvider<Map<String, dynamic>?>((ref) => null);
+final currentItemIndexProvider = StateProvider<int>((ref) => 0);
+
 // [사이드 메뉴 상태] 'home', 'cat_0_0'(일반일정), 'cat_0_1'(기프티콘), 'cat_1', 'cat_2', 'cat_3'
 final currentMenuProvider = StateProvider<String>((ref) => 'home');
 
@@ -334,6 +338,10 @@ class HomeScreen extends ConsumerWidget {
         final data = response.data;
         final typeStr = data['type'] as String;
         final fields = data['fields'] as Map<String, dynamic>;
+
+        // AI 응답 상태 보존 및 페이징 초기화
+        ref.read(aiResponseFieldsProvider.notifier).state = fields;
+        ref.read(currentItemIndexProvider.notifier).state = 0;
         
         final typeToIndex = {
           'SCHEDULE': 0,
@@ -993,6 +1001,8 @@ class HomeScreen extends ConsumerWidget {
                                   maxLines: 4,
                                   decoration: const InputDecoration(labelText: '📝 상세 본문 수정', border: OutlineInputBorder()),
                                 ),
+                                const SizedBox(height: 10),
+                                const DynamicFeaturesCard(),
                                 const SizedBox(height: 15),
                                 Row(
                                    children: [
@@ -1130,4 +1140,178 @@ class NavigatorBuilder extends StatelessWidget {
   const NavigatorBuilder({super.key, required this.builder});
   @override
   Widget build(BuildContext context) => builder(context);
+}
+
+class DynamicFeaturesCard extends ConsumerWidget {
+  const DynamicFeaturesCard({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fields = ref.watch(aiResponseFieldsProvider);
+    if (fields == null || fields.isEmpty) return const SizedBox();
+
+    final Map<String, String> fieldLabels = {
+      'title': '제목',
+      'expires_at': '만료일',
+      'start_at': '시작일',
+      'name': '상호명',
+      'address': '주소',
+      'region': '지역',
+      'product_name': '상품명',
+      'price_amount': '가격',
+      'memo': '메모',
+      'original_price': '정가',
+      'discount_rate': '할인율',
+      'category': '카테고리',
+      'rating': '평점',
+      'hours': '영업시간',
+      'seller': '판매처',
+      'body': '본문',
+      'description': '설명',
+      'exchange_place': '교환처',
+      'sub_type': '세부 분류',
+    };
+
+    // 복수 항목 처리
+    final hasItems = fields.containsKey('items') && fields['items'] is List && (fields['items'] as List).isNotEmpty;
+    final List<dynamic> items = hasItems ? (fields['items'] as List) : [];
+    final currentItemIndex = ref.watch(currentItemIndexProvider);
+    final activeIndex = currentItemIndex >= items.length ? 0 : currentItemIndex;
+
+    final activeFields = hasItems ? (items[activeIndex] as Map<String, dynamic>) : fields;
+
+    // 핵심 필드 및 시스템 내부 키 제외
+    final excludeKeys = {
+      'title', 'expires_at', 'start_at', 'name', 'address',
+      'product_name', 'price_amount', 'items', 'body', 'sub_type'
+    };
+
+    final entryList = activeFields.entries
+        .where((entry) => !excludeKeys.contains(entry.key) && entry.value != null && entry.value.toString().trim().isNotEmpty)
+        .toList();
+
+    return Card(
+      elevation: 1,
+      margin: const EdgeInsets.symmetric(vertical: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.auto_awesome, color: Colors.deepPurple, size: 16),
+                    SizedBox(width: 6),
+                    Text('✨ AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.deepPurple)),
+                  ],
+                ),
+                if (hasItems)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(color: Colors.deepPurple.shade50, borderRadius: BorderRadius.circular(12)),
+                    child: Text('총 ${items.length}개 항목', style: const TextStyle(fontSize: 10, color: Colors.deepPurple, fontWeight: FontWeight.bold)),
+                  ),
+              ],
+            ),
+            const Divider(height: 16),
+
+            // 복수 항목 페이징 조작계
+            if (hasItems) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: activeIndex > 0
+                        ? () {
+                            ref.read(currentItemIndexProvider.notifier).state = activeIndex - 1;
+                            _updateActiveItemControllers(ref, items[activeIndex - 1], ref.read(selectedCategoryProvider));
+                          }
+                        : null,
+                    icon: const Icon(Icons.arrow_left, size: 16),
+                    label: const Text('이전', style: TextStyle(fontSize: 11)),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                  const SizedBox(width: 15),
+                  Text('${activeIndex + 1} / ${items.length}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(width: 15),
+                  ElevatedButton.icon(
+                    onPressed: activeIndex < items.length - 1
+                        ? () {
+                            ref.read(currentItemIndexProvider.notifier).state = activeIndex + 1;
+                            _updateActiveItemControllers(ref, items[activeIndex + 1], ref.read(selectedCategoryProvider));
+                          }
+                        : null,
+                    icon: const Icon(Icons.arrow_right, size: 16),
+                    label: const Text('다음', style: TextStyle(fontSize: 11)),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+            ],
+
+            if (entryList.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8.0),
+                child: Text('추가 추출된 세부 항목이 없습니다.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              )
+            else
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: entryList.length,
+                separatorBuilder: (context, index) => const Divider(height: 8, color: Colors.black12),
+                itemBuilder: (context, index) {
+                  final entry = entryList[index];
+                  final label = fieldLabels[entry.key] ?? entry.key;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4.0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 90,
+                          child: Text(
+                            label,
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black54),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            entry.value.toString(),
+                            style: const TextStyle(fontSize: 12, color: Colors.black87),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _updateActiveItemControllers(WidgetRef ref, Map<String, dynamic> item, int categoryIndex) {
+    if (categoryIndex == 1) { // PLACE
+      ref.read(titleControllerProvider).text = item['name'] ?? '';
+      ref.read(placeLocationProvider).text = item['address'] ?? item['region'] ?? '';
+    } else if (categoryIndex == 2) { // WISHLIST
+      ref.read(titleControllerProvider).text = item['product_name'] ?? '';
+    }
+  }
 }
