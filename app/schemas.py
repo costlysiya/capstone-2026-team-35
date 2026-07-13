@@ -33,3 +33,13 @@ class AnalyzeResponse(BaseModel):
 class ResultConfirmRequest(BaseModel):
     """사용자 승인 요청"""
     edited_fields: dict | None = None  # 수정된 필드 (있으면)
+
+class ResultDetailResponse(BaseModel):
+    """단건 결과 상세 응답"""
+    id: int
+    type: ScreenshotType
+    confidence: float
+    fields: dict
+    status: str
+    created_at: str | None = None
+    updated_at: str | None = None

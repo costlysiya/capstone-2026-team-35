@@ -1,4 +1,5 @@
 import sqlite3
+import json
 from datetime import datetime
 
 DB_PATH = "soseng.db"
@@ -6,7 +7,7 @@ DB_PATH = "soseng.db"
 def get_db():
     """DB 연결 가져오기"""
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # 딕셔너리처럼 접근 가능
+    conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
@@ -19,7 +20,8 @@ def init_db():
             confidence REAL,
             fields TEXT,
             status TEXT DEFAULT 'DRAFT',
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
     conn.commit()
@@ -37,6 +39,15 @@ def save_result(type: str, confidence: float, fields: str):
     conn.close()
     return row_id
 
+def get_result_by_id(id: int):
+    """단건 조회"""
+    conn = get_db()
+    row = conn.execute("SELECT * FROM screenshots WHERE id = ?", (id,)).fetchone()
+    conn.close()
+    if row:
+        return dict(row)
+    return None
+
 def get_all_results():
     """저장된 모든 결과 조회"""
     conn = get_db()
@@ -44,9 +55,51 @@ def get_all_results():
     conn.close()
     return [dict(row) for row in rows]
 
+def get_results_by_type(type: str):
+    """타입별 결과 조회"""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM screenshots WHERE type = ? ORDER BY created_at DESC",
+        (type,)
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def get_results_by_status(status: str):
+    """상태별 결과 조회"""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM screenshots WHERE status = ? ORDER BY created_at DESC",
+        (status,)
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def update_fields(id: int, fields: str):
+    """사용자가 수정한 필드 업데이트"""
+    conn = get_db()
+    now = datetime.now().isoformat()
+    conn.execute(
+        "UPDATE screenshots SET fields = ?, updated_at = ? WHERE id = ?",
+        (fields, now, id)
+    )
+    conn.commit()
+    conn.close()
+
 def update_status(id: int, status: str):
     """상태 업데이트 (DRAFT → CONFIRMED)"""
     conn = get_db()
-    conn.execute("UPDATE screenshots SET status = ? WHERE id = ?", (status, id))
+    now = datetime.now().isoformat()
+    conn.execute(
+        "UPDATE screenshots SET status = ?, updated_at = ? WHERE id = ?",
+        (status, now, id)
+    )
+    conn.commit()
+    conn.close()
+
+def delete_result(id: int):
+    """결과 삭제"""
+    conn = get_db()
+    conn.execute("DELETE FROM screenshots WHERE id = ?", (id,))
     conn.commit()
     conn.close()
