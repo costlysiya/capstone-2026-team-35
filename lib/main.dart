@@ -328,7 +328,7 @@ class HomeScreen extends ConsumerWidget {
           'masked_tokens': <String>[],
         },
         options: Options(contentType: 'application/json'),
-      ).timeout(const Duration(seconds: 3));
+      ).timeout(const Duration(seconds: 15));
       
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
