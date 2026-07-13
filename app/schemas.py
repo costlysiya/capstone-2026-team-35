@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel
 from enum import Enum
 
@@ -11,7 +12,7 @@ class ScreenshotType(str, Enum):
 class AnalyzeRequest(BaseModel):
     """앱 → 서버 요청"""
     ocr_text: str
-    type: ScreenshotType | None = None  # 앱에서 로컬 분류한 타입 (없으면 서버가 LLM으로 분류)
+    type: Optional[ScreenshotType] = None  # 앱에서 로컬 분류한 타입 (없으면 서버가 LLM으로 분류)
     masked_tokens: list[str] = []
 
     class Config:
@@ -25,7 +26,7 @@ class AnalyzeRequest(BaseModel):
 
 class AnalyzeResponse(BaseModel):
     """서버 → 앱 응답"""
-    id: int | None = None
+    id: Optional[int] = None
     type: ScreenshotType
     confidence: float
     fields: dict
@@ -34,7 +35,7 @@ class AnalyzeResponse(BaseModel):
 
 class ResultConfirmRequest(BaseModel):
     """사용자 승인 요청"""
-    edited_fields: dict | None = None  # 수정된 필드 (있으면)
+    edited_fields: Optional[dict] = None  # 수정된 필드 (있으면)
 
 class ResultDetailResponse(BaseModel):
     """단건 결과 상세 응답"""
@@ -43,5 +44,5 @@ class ResultDetailResponse(BaseModel):
     confidence: float
     fields: dict
     status: str
-    created_at: str | None = None
-    updated_at: str | None = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None

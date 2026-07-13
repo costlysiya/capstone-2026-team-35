@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from app.database import (
     get_all_results, get_result_by_id, get_results_by_type,
@@ -12,8 +13,8 @@ router = APIRouter(prefix="/api/results", tags=["결과"])
 
 @router.get("")
 def list_results(
-    type: str | None = Query(None, description="타입 필터 (SCHEDULE, PLACE, WISHLIST, MEMO)"),
-    status: str | None = Query(None, description="상태 필터 (DRAFT, CONFIRMED, NEEDS_EDIT)")
+    type: Optional[str] = Query(None, description="타입 필터 (SCHEDULE, PLACE, WISHLIST, MEMO)"),
+    status: Optional[str] = Query(None, description="상태 필터 (DRAFT, CONFIRMED, NEEDS_EDIT)")
 ):
     """
     저장된 분석 결과 목록 조회.

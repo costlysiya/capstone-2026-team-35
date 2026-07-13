@@ -308,33 +308,85 @@ class HomeScreen extends ConsumerWidget {
     ref.read(ocrStatusProvider.notifier).state = 'loading';
     try {
       final dio = Dio();
-      const serverUrl = 'http://192.168.45.107:8000/classify';
+      const serverUrl = 'http://172.30.1.84:8000/api/analyze/v2';
       
-      final formData = FormData.fromMap({
-        'image': await MultipartFile.fromFile(image.path, filename: 'upload.png'),
-        'ocr_text': maskedText,
-      });
-
-      final response = await dio.post(serverUrl, data: formData).timeout(const Duration(seconds: 3));
+      final response = await dio.post(
+        serverUrl,
+        data: {
+          'ocr_text': maskedText,
+          'masked_tokens': <String>[],
+          'type': null, // 필요 시 로컬 분류 타입 전송 가능 (여기서는 null을 주어 서버 LLM 분류를 유도)
+        },
+        options: Options(contentType: 'application/json'),
+      ).timeout(const Duration(seconds: 3));
       
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
-        final categoryIndex = data['category_index'] as int;
+        final typeStr = data['type'] as String;
+        final fields = data['fields'] as Map<String, dynamic>;
         
+        final typeToIndex = {
+          'SCHEDULE': 0,
+          'PLACE': 1,
+          'WISHLIST': 2,
+          'MEMO': 3,
+        };
+        final categoryIndex = typeToIndex[typeStr] ?? 3;
         ref.read(selectedCategoryProvider.notifier).state = categoryIndex;
         
+        // 1. SCHEDULE 매핑
         if (categoryIndex == 0) {
-          if (maskedText.contains('기프티콘') || maskedText.contains('쿠폰') || maskedText.contains('바코드') || maskedText.contains('교환권') || maskedText.contains('유효기간')) {
-            ref.read(selectedSubCategoryProvider.notifier).state = 1;
+          final subType = fields['sub_type'] as String?;
+          final isGifticon = subType == 'GIFTICON' || 
+                             (fields['exchange_place'] != null) ||
+                             maskedText.contains('기프티콘') || 
+                             maskedText.contains('쿠폰');
+                             
+          ref.read(selectedSubCategoryProvider.notifier).state = isGifticon ? 1 : 0;
+          ref.read(titleControllerProvider).text = fields['title'] ?? '새로운 일정';
+          
+          final expiryDate = fields['expires_at'] as String?;
+          final startDate = fields['start_at'] as String?;
+          
+          if (isGifticon) {
+            ref.read(contentControllerProvider).text = "교환처: ${fields['exchange_place'] ?? '정보 없음'}\n유효기간: ${expiryDate ?? '정보 없음'}";
+            ref.read(scheduleDateProvider).text = expiryDate ?? '';
           } else {
-            ref.read(selectedSubCategoryProvider.notifier).state = 0;
+            ref.read(contentControllerProvider).text = fields['description'] ?? '일정 정보';
+            ref.read(scheduleDateProvider).text = startDate ?? expiryDate ?? '';
           }
         }
-        print('🎯 AI 로컬 서버 분류 성공: ${data['category']} (Index: $categoryIndex)');
+        // 2. PLACE 매핑
+        else if (categoryIndex == 1) {
+          Map<String, dynamic> placeFields = fields;
+          if (fields['items'] != null && (fields['items'] as List).isNotEmpty) {
+            placeFields = (fields['items'] as List).first as Map<String, dynamic>;
+          }
+          ref.read(titleControllerProvider).text = placeFields['name'] ?? '새로운 장소';
+          ref.read(placeLocationProvider).text = placeFields['address'] ?? placeFields['region'] ?? '';
+          ref.read(contentControllerProvider).text = "상호명: ${placeFields['name'] ?? ''}\n주소: ${placeFields['address'] ?? ''}\n영업시간: ${placeFields['hours'] ?? ''}";
+        }
+        // 3. WISHLIST 매핑
+        else if (categoryIndex == 2) {
+          Map<String, dynamic> itemFields = fields;
+          if (fields['items'] != null && (fields['items'] as List).isNotEmpty) {
+            itemFields = (fields['items'] as List).first as Map<String, dynamic>;
+          }
+          final price = itemFields['price_amount'] != null ? "${itemFields['price_amount']}원" : "";
+          ref.read(titleControllerProvider).text = itemFields['product_name'] ?? '새로운 위시 상품';
+          ref.read(contentControllerProvider).text = "상품명: ${itemFields['product_name'] ?? ''}\n가격: $price\n판매처: ${itemFields['seller'] ?? ''}";
+        }
+        // 4. MEMO 매핑
+        else if (categoryIndex == 3) {
+          ref.read(titleControllerProvider).text = fields['title'] ?? '새로운 메모';
+          ref.read(contentControllerProvider).text = fields['body'] ?? '';
+        }
+
+        print('🎯 AI 로컬 서버 분류 성공: $typeStr (Index: $categoryIndex)');
         
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('🎯 AI 분류 완료: ${data['category']}'))
+          SnackBar(content: Text('🎯 AI 분류 완료: $typeStr'))
         );
       } else {
         throw Exception('서버 응답 비정상');
