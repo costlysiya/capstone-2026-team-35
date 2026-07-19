@@ -770,6 +770,13 @@ python tests/test_all_types.py
 |------|------|------|
 | 앱에서 `Connection refused` | 서버가 안 켜져 있음 / IP 주소 잘못됨 | `python run.py` 확인, `ipconfig`로 IP 재확인 |
 | CORS 에러 | `CORSMiddleware` 미설정 | Day 15 코드 확인 |
+
+---
+
+### 🎨 프론트엔드 UI 렌더링 가이드
+
+프론트엔드 개발자(앱 파트)가 LLM에서 반환하는 다양한 필드를 효율적으로 화면에 렌더링하기 위한 가이드입니다. 
+[👉 UI 연동 가이드 문서 보기 (ui_integration_guide.md)](file:///c:/Users/kimsa/Desktop/grad_pj/app/markdown/ui_integration_guide.md)
 | `422 Unprocessable Entity` | 요청 형식이 다름 (필드명 오타 등) | `/docs`에서 올바른 형식 확인 후 공다은에게 공유 |
 | 응답이 너무 느림 (10초+) | LLM 호출 2번이라 오래 걸림 | 서버 로그에서 어디서 막히는지 확인 |
 | `fields`가 문자열로 옴 | DB에서 JSON을 문자열로 저장함 | `results.py`에서 `json.loads()` 처리 확인 |
