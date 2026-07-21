@@ -13,13 +13,15 @@ class AnalyzeRequest(BaseModel):
     ocr_text: str
     type: ScreenshotType | None = None  # 앱에서 로컬 분류한 타입 (없으면 서버가 LLM으로 분류)
     masked_tokens: list[str] = []
+    image_hash: str | None = None  # 이미지 SHA-256 해시 (중복 분석 방지용)
 
     class Config:
         json_schema_extra = {
             "example": {
                 "ocr_text": "[기프티콘] 스타벅스 아메리카노\n유효기간: 2026.08.15",
                 "type": "SCHEDULE",
-                "masked_tokens": []
+                "masked_tokens": [],
+                "image_hash": "a1b2c3d4e5f6..."
             }
         }
 
@@ -31,6 +33,7 @@ class AnalyzeResponse(BaseModel):
     fields: dict
     missing_fields: list[str] = []
     status: str = "DRAFT"
+    masked_info: list[dict] = []  # 앱에서 마스킹해서 보낸 원본 토큰의 구조화된 정보
 
 class ResultConfirmRequest(BaseModel):
     """사용자 승인 요청"""
@@ -45,3 +48,25 @@ class ResultDetailResponse(BaseModel):
     status: str
     created_at: str | None = None
     updated_at: str | None = None
+
+class BatchAnalyzeRequest(BaseModel):
+    """배치 분석 요청 — 복수 이미지를 한 번에"""
+    items: list[AnalyzeRequest]  # 최대 20개까지
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "items": [
+                    {"ocr_text": "[기프티콘] 스타벅스 아메리카노\n유효기간: 2026.08.15", "type": "SCHEDULE", "masked_tokens": []},
+                    {"ocr_text": "을지다락 ★4.5\n서울 중구 을지로 115", "type": "PLACE", "masked_tokens": []}
+                ]
+            }
+        }
+
+class BatchAnalyzeResponse(BaseModel):
+    """배치 분석 응답"""
+    total: int
+    success: int
+    failed: int
+    results: list[AnalyzeResponse]
+    errors: list[dict] = []
