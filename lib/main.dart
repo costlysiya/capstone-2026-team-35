@@ -12,6 +12,53 @@ import 'core/storage/app_storage.dart';
 import 'core/storage/database_helper.dart';
 import 'core/utils/masking_helper.dart';
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🎨 소생 앱 디자인 테마 (뮤트파스텔-아이보리-베이지)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+class SoseangTheme {
+  // 카테고리별 테마 컬러 (레퍼런스 이미지 추출)
+  static const Color scheduleColor = Color(0xFFF4B88C);  // 일정 - 주황/피치
+  static const Color placeColor    = Color(0xFFA8D8E8);  // 장소 - 하늘
+  static const Color wishColor     = Color(0xFFF2C4C4);  // 위시 - 핑크
+  static const Color memoColor     = Color(0xFFF2DCA0);  // 메모 - 노랑
+  static const Color gifticonColor = Color(0xFFF4B88C);  // 기프티콘 - 일정과 동일하게 주황
+
+  // 카테고리별 진한 텍스트/아이콘 컬러
+  static const Color scheduleDark = Color(0xFFD4874E);
+  static const Color placeDark    = Color(0xFF5A9BB5);
+  static const Color wishDark     = Color(0xFFCC8080);
+  static const Color memoDark     = Color(0xFFC4A84E);
+  static const Color gifticonDark = Color(0xFFD4874E);
+
+  // 공통 배경색
+  static const Color ivory      = Color(0xFFFBF8F1);  // 콘텐츠 영역
+  static const Color cream      = Color(0xFFF5ECD7);  // 베이지 배경
+  static const Color skyBg      = Color(0xFFC4DFE8);  // 연하늘 배경
+  static const Color warmWhite  = Color(0xFFFFF9F0);  // 따뜻한 흰색
+  static const Color textDark   = Color(0xFF5A5040);  // 본문 진한 텍스트
+  static const Color textMuted  = Color(0xFF9A8E7E);  // 부제목/뮤트 텍스트
+  static const Color border     = Color(0xFFE8DFD0);  // 연한 테두리
+
+  // 항목별 테마색 리스트 (index 0~4: 일정/장소/대기실/위시/메모)
+  static Color themeOf(String menu) {
+    if (menu == 'home') return cream;
+    if (menu.startsWith('cat_0')) return scheduleColor;
+    if (menu == 'cat_1') return placeColor;
+    if (menu == 'cat_2') return wishColor;
+    if (menu == 'cat_3') return memoColor;
+    return cream;
+  }
+
+  static Color darkOf(String menu) {
+    if (menu == 'home') return textDark;
+    if (menu.startsWith('cat_0')) return scheduleDark;
+    if (menu == 'cat_1') return placeDark;
+    if (menu == 'cat_2') return wishDark;
+    if (menu == 'cat_3') return memoDark;
+    return textDark;
+  }
+}
+
 final onDeviceClassifier = OnDeviceTextClassifier();
 
 void main() async {
@@ -20,6 +67,36 @@ void main() async {
   await onDeviceClassifier.initialize();
   runApp(const ProviderScope(child: MyApp()));
 }
+
+class OcrDraft {
+  final String imagePath;
+  final String status; // 'idle', 'loading', 'success', 'error'
+  final String extractedText;
+  final String title;
+  final String content;
+  final int category; // 0: 일정, 1: 장소, 2: 위시, 3: 메모
+  final int subCategory; // 0: 일반일정, 1: 기프티콘
+  final String scheduleDate;
+  final String placeLocation;
+  final Map<String, dynamic>? aiFields;
+
+  OcrDraft({
+    required this.imagePath,
+    required this.status,
+    this.extractedText = '',
+    this.title = '',
+    this.content = '',
+    this.category = 3,
+    this.subCategory = 0,
+    this.scheduleDate = '',
+    this.placeLocation = '',
+    this.aiFields,
+  });
+}
+
+// 캐시 및 백그라운드 큐 관리 프로바이더
+final draftCacheProvider = StateProvider<Map<String, OcrDraft>>((ref) => {});
+final queueProgressProvider = StateProvider<String>((ref) => '');
 
 // 대기열 및 선택 인덱스 관리
 final pickedImagesProvider = StateProvider<List<XFile>>((ref) => []);
@@ -56,9 +133,33 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: '소생 앱',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFD4874E),
+          surface: SoseangTheme.ivory,
+        ),
+        scaffoldBackgroundColor: SoseangTheme.cream,
         useMaterial3: true,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          titleTextStyle: TextStyle(
+            color: SoseangTheme.textDark,
+            fontSize: 17,
+            fontWeight: FontWeight.bold,
+          ),
+          iconTheme: IconThemeData(color: SoseangTheme.textDark),
+        ),
+        cardTheme: CardThemeData(
+          color: SoseangTheme.ivory,
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: SoseangTheme.border, width: 1),
+          ),
+        ),
       ),
       home: const HomeScreen(),
     );
@@ -73,6 +174,226 @@ class HomeScreen extends ConsumerWidget {
     ref.read(contentControllerProvider).clear();
     ref.read(scheduleDateProvider).clear();
     ref.read(placeLocationProvider).clear();
+    ref.read(aiResponseFieldsProvider.notifier).state = null;
+    ref.read(currentItemIndexProvider.notifier).state = 0;
+  }
+
+  // 1. 단일 이미지 로컬 OCR + 온디바이스 AI 분류 및 캐싱 (1차 초안 생성, 100% 로컬)
+  Future<OcrDraft> _processAndCacheImage(WidgetRef ref, XFile image) async {
+    final currentCache = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
+    if (currentCache[image.path]?.status == 'success') {
+      return currentCache[image.path]!;
+    }
+
+    currentCache[image.path] = OcrDraft(imagePath: image.path, status: 'loading');
+    ref.read(draftCacheProvider.notifier).state = currentCache;
+
+    try {
+      final inputImage = InputImage.fromFilePath(image.path);
+      final textRecognizer = TextRecognizer(script: TextRecognitionScript.korean);
+      final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
+      await textRecognizer.close();
+
+      final rawText = recognizedText.text.trim();
+      if (rawText.isEmpty) {
+        final draft = OcrDraft(
+          imagePath: image.path,
+          status: 'success',
+          extractedText: '⚠️ 글자가 없는 이미지입니다.',
+          title: '새로운 소생 카드',
+          content: '',
+          category: 3,
+        );
+        final cache = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
+        cache[image.path] = draft;
+        ref.read(draftCacheProvider.notifier).state = cache;
+        return draft;
+      }
+
+      final lowerText = rawText.toLowerCase();
+      final firstLine = rawText.split('\n').first.trim();
+      final titleText = firstLine.isNotEmpty ? firstLine : '새로운 소생 카드';
+
+      // 온디바이스 AI 분류기 구동!
+      final aiResultType = onDeviceClassifier.classify(rawText);
+      final typeToIndex = {
+        'SCHEDULE': 0,
+        'PLACE': 1,
+        'WISHLIST': 2,
+        'MEMO': 3,
+      };
+      int finalCategory = typeToIndex[aiResultType] ?? 3;
+
+      final isIDCard = ['주민등록증', '운전면허증', '여권', 'passport', "driver's license", "driver’s license"].any((k) => lowerText.contains(k)) ||
+                       lowerText.contains('<<<<') || lowerText.contains('<<<');
+      if (isIDCard) {
+        finalCategory = 3; // 신분증/여권은 메모 카테고리로 강제 지정
+      }
+
+      int subCat = 0;
+      String schedDate = '';
+      if (finalCategory == 0) {
+        final isGifticon = ['기프티콘', '쿠폰', '바코드', '교환권', '모바일상품권', '모바일쿠폰', '선물하기', '교환처'].any((k) => lowerText.contains(k)) ||
+                           lowerText.contains('사용기한') || lowerText.contains('유효기간');
+        if (isGifticon) {
+          subCat = 1;
+          final datePat1 = RegExp(r'\b(\d{2}|\d{4})[.\-/]\d{1,2}[.\-/]\d{1,2}\b');
+          final datePat2 = RegExp(r'(\d{2}|\d{4})년\s?\d{1,2}월\s?\d{1,2}일');
+          final fullTextCleaned = rawText.replaceAll('\n', ' ');
+          final m1 = datePat1.firstMatch(fullTextCleaned);
+          if (m1 != null) {
+            schedDate = m1.group(0)!;
+          } else {
+            final m2 = datePat2.firstMatch(fullTextCleaned);
+            if (m2 != null) {
+              schedDate = m2.group(0)!;
+            }
+          }
+        }
+      }
+
+      // SQLite DB에 1차 초안(DRAFT) 레코드 등록
+      try {
+        await DatabaseHelper.instance.insertScreenshot({
+          'type': aiResultType,
+          'confidence': 0.95,
+          'fields': jsonEncode({'title': titleText, 'body': rawText, 'expires_at': schedDate}),
+          'image_path': image.path,
+          'status': 'DRAFT',
+        });
+      } catch (e) {
+        print('DB draft insert error (non-fatal): $e');
+      }
+
+      final draft = OcrDraft(
+        imagePath: image.path,
+        status: 'success',
+        extractedText: rawText,
+        title: titleText,
+        content: rawText,
+        category: finalCategory,
+        subCategory: subCat,
+        scheduleDate: schedDate,
+      );
+
+      final cache = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
+      cache[image.path] = draft;
+      ref.read(draftCacheProvider.notifier).state = cache;
+      return draft;
+    } catch (e) {
+      final draft = OcrDraft(
+        imagePath: image.path,
+        status: 'error',
+        extractedText: '❌ 분석 실패: $e',
+        title: '새로운 소생 카드',
+        content: '',
+        category: 3,
+      );
+      final cache = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
+      cache[image.path] = draft;
+      ref.read(draftCacheProvider.notifier).state = cache;
+      return draft;
+    }
+  }
+
+  // 2. 캐시된 초안 데이터를 UI 폼으로 복사
+  void _loadDraftToUI(WidgetRef ref, String imagePath) {
+    final cache = ref.read(draftCacheProvider);
+    final draft = cache[imagePath];
+    if (draft == null) {
+      ref.read(ocrStatusProvider.notifier).state = 'idle';
+      _clearAllFields(ref);
+      return;
+    }
+
+    ref.read(ocrStatusProvider.notifier).state = draft.status;
+    if (draft.status == 'success' || draft.status == 'error') {
+      ref.read(extractedTextProvider.notifier).state = draft.extractedText;
+      ref.read(contentControllerProvider).text = draft.content;
+      ref.read(titleControllerProvider).text = draft.title;
+      ref.read(selectedCategoryProvider.notifier).state = draft.category;
+      ref.read(selectedSubCategoryProvider.notifier).state = draft.subCategory;
+      ref.read(scheduleDateProvider).text = draft.scheduleDate;
+      ref.read(placeLocationProvider).text = draft.placeLocation;
+      ref.read(aiResponseFieldsProvider.notifier).state = draft.aiFields;
+    }
+  }
+
+  // 3. 사용자가 갤러리에서 다수 사진 선택 시 실행되는 백그라운드 큐
+  Future<void> _startBackgroundBatchProcessing(WidgetRef ref, List<XFile> images) async {
+    if (images.isEmpty) return;
+
+    ref.read(queueProgressProvider.notifier).state = '분석 준비 중...';
+    final activeIndex = ref.read(activeImageIndexProvider);
+    final activeImage = images.length > activeIndex ? images[activeIndex] : images.first;
+
+    // activeImage 먼저 즉시 처리하여 UI 표출
+    await _processAndCacheImage(ref, activeImage);
+    _loadDraftToUI(ref, activeImage.path);
+
+    // 나머지 이미지 순차 백그라운드 처리 (사용자 UI 멈춤 없음)
+    for (int i = 0; i < images.length; i++) {
+      final img = images[i];
+      ref.read(queueProgressProvider.notifier).state = '⚡ 로컬 AI 분석 중 (${i + 1}/${images.length})';
+      
+      await _processAndCacheImage(ref, img);
+
+      // 현재 사용자가 보고 있는 이미지라면 UI 즉시 동기화
+      final currentActiveIndex = ref.read(activeImageIndexProvider);
+      final currentPickedList = ref.read(pickedImagesProvider);
+      if (currentPickedList.length > currentActiveIndex && currentPickedList[currentActiveIndex].path == img.path) {
+        _loadDraftToUI(ref, img.path);
+      }
+    }
+
+    ref.read(queueProgressProvider.notifier).state = '✅ 로컬 분석 완료';
+  }
+
+  // 4. 선택 활성 이미지 변경 시
+  void _selectActiveImage(WidgetRef ref, List<XFile> images, int newIndex) {
+    ref.read(activeImageIndexProvider.notifier).state = newIndex;
+    final selectedImg = images[newIndex];
+    final cache = ref.read(draftCacheProvider);
+
+    if (cache[selectedImg.path]?.status == 'success') {
+      _loadDraftToUI(ref, selectedImg.path);
+    } else {
+      // 백그라운드 큐가 아직 안 도달한 이미지를 클릭한 경우 즉시 우선 처리
+      ref.read(ocrStatusProvider.notifier).state = 'loading';
+      _processAndCacheImage(ref, selectedImg).then((_) {
+        _loadDraftToUI(ref, selectedImg.path);
+      });
+    }
+  }
+
+  // 5. 사용자가 카테고리 수동 변경 시 캐시 및 썸네일 동기화
+  void _updateActiveDraftCategory(WidgetRef ref, {int? category, int? subCategory}) {
+    final images = ref.read(pickedImagesProvider);
+    final activeIndex = ref.read(activeImageIndexProvider);
+    if (images.isEmpty || activeIndex >= images.length) return;
+
+    final activePath = images[activeIndex].path;
+    final cache = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
+    final existingDraft = cache[activePath];
+
+    if (existingDraft != null) {
+      final updatedCategory = category ?? existingDraft.category;
+      final updatedSubCat = subCategory ?? existingDraft.subCategory;
+
+      cache[activePath] = OcrDraft(
+        imagePath: activePath,
+        status: existingDraft.status,
+        extractedText: existingDraft.extractedText,
+        title: existingDraft.title,
+        content: existingDraft.content,
+        category: updatedCategory,
+        subCategory: updatedSubCat,
+        scheduleDate: existingDraft.scheduleDate,
+        placeLocation: existingDraft.placeLocation,
+        aiFields: existingDraft.aiFields,
+      );
+      ref.read(draftCacheProvider.notifier).state = cache;
+    }
   }
 
   // 갤러리에서 대량 가져오기 (최대 50장)
@@ -81,11 +402,14 @@ class HomeScreen extends ConsumerWidget {
     final List<XFile> images = await picker.pickMultiImage();
     
     if (images.isNotEmpty) {
-      ref.read(pickedImagesProvider.notifier).state = images.take(50).toList();
+      final selectedList = images.take(50).toList();
+      ref.read(pickedImagesProvider.notifier).state = selectedList;
       ref.read(activeImageIndexProvider.notifier).state = 0;
+      ref.read(draftCacheProvider.notifier).state = {};
       ref.read(ocrStatusProvider.notifier).state = 'idle';
-      ref.read(extractedTextProvider.notifier).state = '';
       _clearAllFields(ref);
+
+      _startBackgroundBatchProcessing(ref, selectedList);
     }
   }
 
@@ -96,17 +420,22 @@ class HomeScreen extends ConsumerWidget {
 
     if (images.isEmpty) return;
 
+    final removedImage = images[activeIndex];
     final updatedImages = List<XFile>.from(images)..removeAt(activeIndex);
     ref.read(pickedImagesProvider.notifier).state = updatedImages;
-    ref.read(ocrStatusProvider.notifier).state = 'idle';
-    _clearAllFields(ref);
+
+    // 캐시에서도 삭제
+    final cache = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
+    cache.remove(removedImage.path);
+    ref.read(draftCacheProvider.notifier).state = cache;
 
     if (updatedImages.isNotEmpty) {
-      if (activeIndex >= updatedImages.length) {
-        ref.read(activeImageIndexProvider.notifier).state = updatedImages.length - 1;
-      }
+      final newIndex = activeIndex >= updatedImages.length ? updatedImages.length - 1 : activeIndex;
+      _selectActiveImage(ref, updatedImages, newIndex);
     } else {
       ref.read(activeImageIndexProvider.notifier).state = 0;
+      ref.read(ocrStatusProvider.notifier).state = 'idle';
+      _clearAllFields(ref);
     }
   }
 
@@ -130,84 +459,6 @@ class HomeScreen extends ConsumerWidget {
       return XFile(croppedFile.path);
     }
     return null;
-  }
-
-  // 단수 이미지 OCR 추출 (기본 텍스트 매핑만 수행, 서버 전송 없음)
-  Future<void> _runSingleOCR(WidgetRef ref, XFile image) async {
-    ref.read(ocrStatusProvider.notifier).state = 'loading';
-    _clearAllFields(ref);
-
-    try {
-      final inputImage = InputImage.fromFilePath(image.path);
-      final textRecognizer = TextRecognizer(script: TextRecognitionScript.korean);
-      final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
-
-      if (recognizedText.text.trim().isEmpty) {
-        ref.read(extractedTextProvider.notifier).state = "⚠️ 글자가 없는 이미지입니다.";
-        ref.read(titleControllerProvider).text = "새로운 소생 카드";
-      } else {
-        print('🔍 [OCR Raw Text]\n${recognizedText.text}');
-        
-        // 마스킹 처리를 건너뛰고 사용자가 바로 볼 수 있도록 원본 OCR 추출 텍스트 매핑
-        ref.read(extractedTextProvider.notifier).state = recognizedText.text;
-        ref.read(contentControllerProvider).text = recognizedText.text;
-        
-        // 첫 줄을 제목 기본값으로 설정
-        final firstLine = recognizedText.text.split('\n').first.trim();
-        ref.read(titleControllerProvider).text = firstLine.isNotEmpty ? firstLine : "새로운 소생 카드";
-
-        // 온디바이스 AI 분류기 호출!
-        final aiResultType = onDeviceClassifier.classify(recognizedText.text);
-        
-        final typeToIndex = {
-          'SCHEDULE': 0,
-          'PLACE': 1,
-          'WISHLIST': 2,
-          'MEMO': 3,
-        };
-        int finalCategory = typeToIndex[aiResultType] ?? 3;
-
-        final isIDCard = ['주민등록증', '운전면허증', '여권', 'passport', 'driver\'s license', 'driver’s license'].any((k) => lowerText.contains(k)) ||
-                         lowerText.contains('<<<<') ||
-                         lowerText.contains('<<<');
-        if (isIDCard) {
-          finalCategory = 3; // 신분증/여권은 무조건 메모(MEMO) 카테고리로 강제 지정
-        }
-
-        ref.read(selectedCategoryProvider.notifier).state = finalCategory;
-
-        if (finalCategory == 0) {
-          final isGifticon = ['기프티콘', '쿠폰', '바코드', '교환권', '모바일상품권', '모바일쿠폰', '선물하기', '교환처'].any((k) => lowerText.contains(k)) ||
-                             lowerText.contains('사용기한') || lowerText.contains('유효기간');
-          if (isGifticon) {
-            ref.read(selectedSubCategoryProvider.notifier).state = 1; // 기프티콘
-            
-            // 기프티콘인 경우 로컬에서 유효기간 패턴을 찾아 날짜 텍스트필드에 미리 입력
-            final datePat1 = RegExp(r'\b(\d{2}|\d{4})[.\-/]\d{1,2}[.\-/]\d{1,2}\b');
-            final datePat2 = RegExp(r'(\d{2}|\d{4})년\s?\d{1,2}월\s?\d{1,2}일');
-            final fullTextCleaned = recognizedText.text.replaceAll('\n', ' ');
-            final m1 = datePat1.firstMatch(fullTextCleaned);
-            if (m1 != null) {
-              ref.read(scheduleDateProvider).text = m1.group(0)!;
-            } else {
-              final m2 = datePat2.firstMatch(fullTextCleaned);
-              if (m2 != null) {
-                ref.read(scheduleDateProvider).text = m2.group(0)!;
-              }
-            }
-          } else {
-            ref.read(selectedSubCategoryProvider.notifier).state = 0; // 일반 일정
-          }
-        }
-      }
-      
-      ref.read(ocrStatusProvider.notifier).state = 'success';
-      textRecognizer.close();
-      
-    } catch (e) {
-      ref.read(extractedTextProvider.notifier).state = "❌ 분석 실패: $e";
-      ref.read(ocrStatusProvider.notifier).state = 'success';
-    }
   }
 
   // 사용자가 명시적으로 선택 시 호출되는 AI 기반 구조화 분석 모듈
@@ -391,6 +642,7 @@ class HomeScreen extends ConsumerWidget {
       };
       int finalCategory = typeToIndex[aiResultType] ?? 3;
 
+      final lowerText = maskedText.toLowerCase();
       final isIDCard = ['주민등록증', '운전면허증', '여권', 'passport', 'driver\'s license', 'driver’s license'].any((k) => lowerText.contains(k)) ||
                        lowerText.contains('<<<<') ||
                        lowerText.contains('<<<');
@@ -485,25 +737,25 @@ class HomeScreen extends ConsumerWidget {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('💾 지정된 보관함 방으로 입고 및 로컬 DB에 안전하게 영구 저장되었습니다!')));
     }
 
-    ref.read(ocrStatusProvider.notifier).state = 'idle';
-    _clearAllFields(ref);
-
     if (updatedImages.isNotEmpty) {
-      if (activeIndex >= updatedImages.length) {
-        ref.read(activeImageIndexProvider.notifier).state = updatedImages.length - 1;
-      }
+      final nextIndex = activeIndex >= updatedImages.length ? updatedImages.length - 1 : activeIndex;
+      _selectActiveImage(ref, updatedImages, nextIndex);
+    } else {
+      ref.read(activeImageIndexProvider.notifier).state = 0;
+      ref.read(ocrStatusProvider.notifier).state = 'idle';
+      _clearAllFields(ref);
     }
   }
 
   Map<String, dynamic> _getCategoryStyle(int category, {int subCategory = 0}) {
     if (category == 0 && subCategory == 1) {
-      return {'name': '🎟️ 기프티콘 (GIFTICON)', 'color': Colors.cyan[700]!, 'icon': Icons.confirmation_number};
+      return {'name': '🎟️ 기프티콘 (GIFTICON)', 'color': SoseangTheme.gifticonDark, 'bgColor': SoseangTheme.gifticonColor, 'icon': Icons.confirmation_number};
     }
     switch (category) {
-      case 0: return {'name': '📅 일반 일정 (SCHEDULE)', 'color': Colors.blue, 'icon': Icons.calendar_today};
-      case 1: return {'name': '📍 장소 (PLACE)', 'color': Colors.teal, 'icon': Icons.map};
-      case 2: return {'name': '🎁 위시리스트 (WISHLIST)', 'color': Colors.pink, 'icon': Icons.shopping_bag};
-      default: return {'name': '📝 메모 (MEMO)', 'color': Colors.amber[700]!, 'icon': Icons.note};
+      case 0: return {'name': '📅 일반 일정 (SCHEDULE)', 'color': SoseangTheme.scheduleDark, 'bgColor': SoseangTheme.scheduleColor, 'icon': Icons.event_note};
+      case 1: return {'name': '📍 장소 (PLACE)', 'color': SoseangTheme.placeDark, 'bgColor': SoseangTheme.placeColor, 'icon': Icons.place};
+      case 2: return {'name': '🎁 위시리스트 (WISHLIST)', 'color': SoseangTheme.wishDark, 'bgColor': SoseangTheme.wishColor, 'icon': Icons.favorite};
+      default: return {'name': '📝 메모 (MEMO)', 'color': SoseangTheme.memoDark, 'bgColor': SoseangTheme.memoColor, 'icon': Icons.sticky_note_2};
     }
   }
 
@@ -625,7 +877,7 @@ class HomeScreen extends ConsumerWidget {
                       const SizedBox(height: 15),
                       Text(card['title'], style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 10),
-                      const Divider(),
+                      const Divider(color: SoseangTheme.border),
                       const SizedBox(height: 10),
                       if (card['extraInfo'].toString().isNotEmpty) ...[
                         Text(
@@ -633,15 +885,15 @@ class HomeScreen extends ConsumerWidget {
                               ? '⏳ 기프티콘 유효기간'
                               : card['categoryId'] == 0 ? '⏰ 일정 일시 설정'
                               : '🗺️ 장소 주소 및 명칭',
-                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12),
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: SoseangTheme.textMuted, fontSize: 12),
                         ),
                         const SizedBox(height: 4),
                         Text(card['extraInfo'], style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: cardStyle['color'])),
                         const SizedBox(height: 15),
                       ],
-                      const Text('📝 추출 상세 본문', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12)),
+                      const Text('📝 추출 상세 본문', style: TextStyle(fontWeight: FontWeight.bold, color: SoseangTheme.textMuted, fontSize: 12)),
                       const SizedBox(height: 5),
-                      Text(card['content'], style: const TextStyle(fontSize: 14, height: 1.4, color: Colors.black87)),
+                      Text(card['content'], style: const TextStyle(fontSize: 14, height: 1.4, color: SoseangTheme.textDark)),
                       const SizedBox(height: 25),
                       SizedBox(
                         width: double.infinity,
@@ -676,6 +928,8 @@ class HomeScreen extends ConsumerWidget {
     final int selectedSubCategory = ref.watch(selectedSubCategoryProvider); 
     final List<Map<String, dynamic>> savedCards = ref.watch(savedCardsProvider);
     final String currentMenu = ref.watch(currentMenuProvider);
+    final drafts = ref.watch(draftCacheProvider);
+    final progressText = ref.watch(queueProgressProvider);
 
     final titleController = ref.watch(titleControllerProvider);
     final contentController = ref.watch(contentControllerProvider);
@@ -684,434 +938,624 @@ class HomeScreen extends ConsumerWidget {
 
     final style = _getCategoryStyle(selectedCategory, subCategory: selectedCategory == 0 ? selectedSubCategory : 0);
 
-    String appBarTitle = '🌱 소생 - 맞춤 검토 후 분류';
-    if (currentMenu == 'cat_0_0') appBarTitle = '📅 일반 일정 보관함';
-    if (currentMenu == 'cat_0_1') appBarTitle = '🎟️ 기프티콘 보관함';
+    String appBarTitle = '🌱 소생 - 대기실';
+    if (currentMenu.startsWith('cat_0')) appBarTitle = '📅 일정 보관함';
     if (currentMenu == 'cat_1') appBarTitle = '📍 장소 보관함';
-    if (currentMenu == 'cat_2') appBarTitle = '🎁 위시리스트 보관함';
+    if (currentMenu == 'cat_2') appBarTitle = '💝 위시 보관함';
     if (currentMenu == 'cat_3') appBarTitle = '📝 메모 보관함';
 
+    // 현재 탭의 테마 컬러
+    final themeColor = SoseangTheme.themeOf(currentMenu);
+    final themeDark = SoseangTheme.darkOf(currentMenu);
+
+    // 하단 탭 인덱스 매핑
+    int currentTabIndex = 2; // 대기실
+    if (currentMenu.startsWith('cat_0')) currentTabIndex = 0;
+    if (currentMenu == 'cat_1') currentTabIndex = 1;
+    if (currentMenu == 'cat_2') currentTabIndex = 3;
+    if (currentMenu == 'cat_3') currentTabIndex = 4;
+
     return Scaffold(
+      backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(appBarTitle, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.deepPurple[50],
+        title: Text(appBarTitle),
+        centerTitle: true,
       ),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
+      body: SizedBox.expand(
+        child: Stack(
           children: [
-            const DrawerHeader(
-              decoration: BoxDecoration(color: Colors.deepPurple),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('🌱 소생 앱', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-                  SizedBox(height: 5),
-                  Text('스마트 이미지-텍스트 소생 서랍장', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                ],
+          // 🎨 투톤 마블링 배경 (항목 변경 시 컬러만 변경)
+          Positioned.fill(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeInOut,
+              child: CustomPaint(
+                painter: MarblePainter(
+                  color1: SoseangTheme.cream,
+                  color2: themeColor,
+                ),
+                size: Size.infinite,
               ),
             ),
-            ListTile(
-              leading: const Icon(Icons.collections, color: Colors.deepPurple),
-              title: const Text('🔍 스크린샷 소생대기실', style: TextStyle(fontWeight: FontWeight.bold)),
-              selected: currentMenu == 'home',
-              onTap: () {
-                ref.read(currentMenuProvider.notifier).state = 'home';
-                Navigator.pop(context);
-              },
-            ),
-            const Divider(),
-            Padding(
-              padding: const EdgeInsets.only(left: 16, top: 10, bottom: 5),
-              child: Text('🗄️ 내 보관 서랍장 목록', style: TextStyle(color: Colors.grey[600], fontSize: 11, fontWeight: FontWeight.bold)),
-            ),
-            
-            ExpansionTile(
-              leading: const Icon(Icons.calendar_today, color: Colors.blue),
-              title: const Text('일정 (SCHEDULE)', style: TextStyle(fontSize: 14)),
-              initiallyExpanded: currentMenu.startsWith('cat_0'),
-              children: [
-                ListTile(
-                  contentPadding: const EdgeInsets.only(left: 45),
-                  leading: const Icon(Icons.calendar_month, color: Colors.blueAccent, size: 18),
-                  title: const Text('일반 일정', style: TextStyle(fontSize: 13)),
-                  selected: currentMenu == 'cat_0_0',
-                  onTap: () {
-                    ref.read(currentMenuProvider.notifier).state = 'cat_0_0';
-                    Navigator.pop(context);
-                  },
+          ),
+          // 📄 메인 콘텐츠 (아이보리 카드)
+          SafeArea(
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: SoseangTheme.ivory,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: SoseangTheme.border, width: 1),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.06),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(18.0),
+                    child: currentMenu == 'home'
+                        ? Column(
+                            children: [
+                              if (pickedImages.isEmpty) ...[
+                                Container(
+                                  width: double.infinity,
+                                  height: 180,
+                                  decoration: BoxDecoration(
+                                    color: SoseangTheme.cream.withValues(alpha: 0.6),
+                                    borderRadius: BorderRadius.circular(15),
+                                    border: Border.all(color: SoseangTheme.border),
+                                  ),
+                                  child: const Center(
+                                    child: Text(
+                                      '소생할 스크린샷들을 선택해 주세요.\n(이미지 고화질 줌인 장착)',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(color: SoseangTheme.textMuted, fontSize: 13),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    onPressed: () => _pickMultiImages(ref),
+                                    icon: const Icon(Icons.photo_library),
+                                    label: const Text('갤러리에서 사진 무더기로 가져오기'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: SoseangTheme.scheduleDark,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                  ),
+                                ),
+                              ] else ...[
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text('⏳ 대기열 (${pickedImages.length}장 남음)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: SoseangTheme.textDark)),
+                                    if (progressText.isNotEmpty)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(color: SoseangTheme.gifticonColor.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(10), border: Border.all(color: SoseangTheme.gifticonDark)),
+                                        child: Text(progressText, style: const TextStyle(color: SoseangTheme.gifticonDark, fontSize: 11, fontWeight: FontWeight.bold)),
+                                      ),
+                                    TextButton.icon(
+                                      onPressed: () => _removeActiveImage(ref),
+                                      icon: Icon(Icons.delete_outline, size: 14, color: SoseangTheme.wishDark),
+                                      label: Text('삭제', style: TextStyle(color: SoseangTheme.wishDark, fontSize: 11)),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 5),
+                                SizedBox(
+                                  height: 80,
+                                  child: ListView.builder(
+                                    scrollDirection: Axis.horizontal,
+                                    itemCount: pickedImages.length,
+                                    itemBuilder: (context, index) {
+                                      bool isActive = index == activeIndex;
+                                      final imgPath = pickedImages[index].path;
+                                      final draft = drafts[imgPath];
+                                      final isDone = draft?.status == 'success';
+                                      final isLoading = draft?.status == 'loading';
+
+                                      Color categoryBorderColor = SoseangTheme.border;
+                                      String catIcon = '⚡';
+
+                                      if (isDone) {
+                                        final catStyle = _getCategoryStyle(draft!.category, subCategory: draft.subCategory);
+                                        categoryBorderColor = catStyle['bgColor'] ?? catStyle['color'];
+                                        if (draft.category == 0) catIcon = draft.subCategory == 1 ? '🎟️' : '🗓️';
+                                        if (draft.category == 1) catIcon = '📍';
+                                        if (draft.category == 2) catIcon = '🛍️';
+                                        if (draft.category == 3) catIcon = '📝';
+                                      }
+
+                                      if (isActive) {
+                                        categoryBorderColor = style['bgColor'] ?? style['color'];
+                                      }
+
+                                      return GestureDetector(
+                                        onTap: () => _selectActiveImage(ref, pickedImages, index),
+                                        child: AnimatedContainer(
+                                          duration: const Duration(milliseconds: 200),
+                                          margin: const EdgeInsets.symmetric(horizontal: 4),
+                                          width: 65,
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(10),
+                                            border: Border.all(
+                                              color: categoryBorderColor,
+                                              width: isActive ? 3.5 : 2.0,
+                                            ),
+                                            boxShadow: isActive
+                                                ? [
+                                                    BoxShadow(
+                                                      color: categoryBorderColor.withValues(alpha: 0.4),
+                                                      blurRadius: 6,
+                                                      spreadRadius: 1,
+                                                    )
+                                                  ]
+                                                : null,
+                                          ),
+                                          child: Stack(
+                                            children: [
+                                              ClipRRect(
+                                                borderRadius: BorderRadius.circular(8),
+                                                child: Image.file(
+                                                  File(imgPath),
+                                                  width: double.infinity,
+                                                  height: double.infinity,
+                                                  fit: BoxFit.cover,
+                                                  color: isDone && !isActive ? Colors.black.withValues(alpha: 0.2) : null,
+                                                  colorBlendMode: isDone && !isActive ? BlendMode.darken : null,
+                                                ),
+                                              ),
+                                              if (isLoading)
+                                                Container(
+                                                  color: Colors.black38,
+                                                  child: const Center(
+                                                    child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+                                                  ),
+                                                ),
+                                              if (isDone)
+                                                Positioned(
+                                                  right: 2,
+                                                  top: 2,
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.black.withValues(alpha: 0.7),
+                                                      borderRadius: BorderRadius.circular(4),
+                                                    ),
+                                                    child: Text(catIcon, style: const TextStyle(fontSize: 10)),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(height: 15),
+
+                                Stack(
+                                  children: [
+                                    GestureDetector(
+                                      onTap: pickedImages.isNotEmpty ? () => _showEnlargedImage(context, pickedImages[activeIndex].path) : null,
+                                      child: AnimatedContainer(
+                                        duration: const Duration(milliseconds: 300),
+                                        width: double.infinity,
+                                        height: 220,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(15),
+                                          border: Border.all(color: style['bgColor'] ?? style['color'], width: 2.5),
+                                          color: SoseangTheme.cream.withValues(alpha: 0.3),
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(14),
+                                          child: Image.file(
+                                            File(pickedImages[activeIndex].path),
+                                            fit: BoxFit.contain,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    if (ocrStatus == 'loading')
+                                      Container(
+                                        width: double.infinity,
+                                        height: 220,
+                                        decoration: BoxDecoration(
+                                          color: Colors.black38,
+                                          borderRadius: BorderRadius.circular(15),
+                                        ),
+                                        child: const Center(
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              CircularProgressIndicator(color: Colors.white),
+                                              SizedBox(height: 10),
+                                              Text('🔍 온디바이스 AI 분석 중...', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+
+                                if (ocrStatus == 'success' && extractedText.isNotEmpty) ...[
+                                  const SizedBox(height: 15),
+                                  Card(
+                                    elevation: 3,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(15),
+                                      side: BorderSide(color: style['bgColor'] ?? style['color'], width: 2),
+                                    ),
+                                    color: SoseangTheme.warmWhite,
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(16.0),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('📁 저장할 대분류 카테고리', style: TextStyle(fontSize: 12, color: SoseangTheme.textMuted, fontWeight: FontWeight.bold)),
+                                          const SizedBox(height: 6),
+                                          Wrap(
+                                            spacing: 6,
+                                            children: List.generate(4, (index) {
+                                              String chipLabel = "메모";
+                                              if (index == 0) chipLabel = "일정";
+                                              if (index == 1) chipLabel = "장소";
+                                              if (index == 2) chipLabel = "위시";
+                                              final chipStyle = _getCategoryStyle(index);
+                                              return ChoiceChip(
+                                                label: Text(chipLabel, style: TextStyle(fontSize: 11, color: selectedCategory == index ? Colors.white : chipStyle['color'])),
+                                                selected: selectedCategory == index,
+                                                selectedColor: chipStyle['color'],
+                                                backgroundColor: (chipStyle['bgColor'] as Color).withValues(alpha: 0.3),
+                                                onSelected: (selected) {
+                                                  if (selected) {
+                                                    ref.read(selectedCategoryProvider.notifier).state = index;
+                                                    _updateActiveDraftCategory(ref, category: index);
+                                                  }
+                                                },
+                                              );
+                                            }),
+                                          ),
+                                          const Divider(color: SoseangTheme.border),
+                                          
+                                          if (selectedCategory == 0) ...[
+                                            Text('🎟️ 일정 세부 분류 선택', style: TextStyle(fontSize: 12, color: SoseangTheme.scheduleDark, fontWeight: FontWeight.bold)),
+                                            const SizedBox(height: 6),
+                                            DropdownButtonFormField<int>(
+                                              value: selectedSubCategory,
+                                              decoration: InputDecoration(
+                                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: SoseangTheme.border)),
+                                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                              ),
+                                              items: const [
+                                                DropdownMenuItem(value: 0, child: Text('🗓️ 일반 스케줄 일정', style: TextStyle(fontSize: 14))),
+                                                DropdownMenuItem(value: 1, child: Text('🎟️ 기프티콘 / 쿠폰 교환권', style: TextStyle(fontSize: 14))),
+                                              ],
+                                              onChanged: (val) {
+                                                if (val != null) {
+                                                  ref.read(selectedSubCategoryProvider.notifier).state = val;
+                                                  _updateActiveDraftCategory(ref, subCategory: val);
+                                                }
+                                              },
+                                            ),
+                                            const SizedBox(height: 15),
+                                          ],
+
+                                          Row(
+                                            children: [
+                                              Icon(style['icon'], color: style['color']),
+                                              const SizedBox(width: 8),
+                                              Text(style['name'], style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: style['color'])),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 15),
+                                          TextField(
+                                            controller: titleController,
+                                            decoration: InputDecoration(
+                                              labelText: '📌 제목 수정',
+                                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                              fillColor: SoseangTheme.ivory,
+                                              filled: true,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 15),
+                                          
+                                          if (selectedCategory == 0) ...[
+                                            TextField(
+                                              controller: scheduleDateController,
+                                              decoration: InputDecoration(
+                                                labelText: selectedSubCategory == 1 ? '⏰ 기프티콘 유효기간 입력' : '⏰ 일정 일시 입력', 
+                                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), 
+                                                prefixIcon: Icon(Icons.access_time, color: SoseangTheme.scheduleDark),
+                                                fillColor: SoseangTheme.ivory,
+                                                filled: true,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 15),
+                                          ],
+                                          if (selectedCategory == 1) ...[
+                                            TextField(
+                                              controller: placeLocationController,
+                                              decoration: InputDecoration(
+                                                labelText: '📍 장소 위치/주소 입력',
+                                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                                prefixIcon: Icon(Icons.pin_drop, color: SoseangTheme.placeDark),
+                                                fillColor: SoseangTheme.ivory,
+                                                filled: true,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 15),
+                                          ],
+                                          
+                                          TextField(
+                                            controller: contentController,
+                                            maxLines: 4,
+                                            decoration: InputDecoration(
+                                              labelText: '📝 상세 본문 수정',
+                                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                              fillColor: SoseangTheme.ivory,
+                                              filled: true,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 10),
+                                          const DynamicFeaturesCard(),
+                                          const SizedBox(height: 15),
+                                          Row(
+                                             children: [
+                                               Expanded(
+                                                 child: ElevatedButton.icon(
+                                                   onPressed: () => _runAIAnalysis(context, ref, pickedImages[activeIndex]),
+                                                   icon: const Icon(Icons.auto_awesome),
+                                                   label: const Text('AI 분석 (LLM)'),
+                                                   style: ElevatedButton.styleFrom(
+                                                     backgroundColor: SoseangTheme.textDark,
+                                                     foregroundColor: Colors.white,
+                                                     padding: const EdgeInsets.symmetric(vertical: 12),
+                                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                                   ),
+                                                 ),
+                                               ),
+                                               const SizedBox(width: 10),
+                                               Expanded(
+                                                 child: ElevatedButton.icon(
+                                                   onPressed: () => _saveCurrentCardAndRemoveFromQueue(context, ref),
+                                                   icon: const Icon(Icons.save),
+                                                   label: const Text('바로 저장하기'),
+                                                   style: ElevatedButton.styleFrom(
+                                                     backgroundColor: style['color'],
+                                                     foregroundColor: Colors.white,
+                                                     padding: const EdgeInsets.symmetric(vertical: 12),
+                                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                                   ),
+                                                 ),
+                                               ),
+                                             ],
+                                           )
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ]
+                            ],
+                          )
+                        : Column(
+                            children: [
+                              if (currentMenu.startsWith('cat_0'))
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: Row(
+                                    children: [
+                                      ChoiceChip(
+                                        label: const Text('🗓️ 일반 일정', style: TextStyle(fontSize: 12)),
+                                        selected: currentMenu == 'cat_0_0' || currentMenu == 'cat_0',
+                                        selectedColor: SoseangTheme.scheduleColor,
+                                        onSelected: (_) => ref.read(currentMenuProvider.notifier).state = 'cat_0_0',
+                                      ),
+                                      const SizedBox(width: 8),
+                                      ChoiceChip(
+                                        label: const Text('🎟️ 기프티콘', style: TextStyle(fontSize: 12)),
+                                        selected: currentMenu == 'cat_0_1',
+                                        selectedColor: SoseangTheme.gifticonColor,
+                                        onSelected: (_) => ref.read(currentMenuProvider.notifier).state = 'cat_0_1',
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              NavigatorBuilder(
+                                builder: (context) {
+                                  List<String> menuParts = currentMenu.split('_');
+                                  int targetCatId = int.parse(menuParts[1]);
+                                  int? targetSubCatId = menuParts.length > 2 ? int.parse(menuParts[2]) : null;
+
+                                  final filteredCards = savedCards.where((c) {
+                                    if (targetSubCatId != null) {
+                                      return c['categoryId'] == targetCatId && c['subCategoryId'] == targetSubCatId;
+                                    }
+                                    return c['categoryId'] == targetCatId;
+                                  }).toList();
+
+                                  final cardStyle = _getCategoryStyle(targetCatId, subCategory: targetSubCatId ?? 0);
+
+                                  if (filteredCards.isEmpty) {
+                                    return Center(
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 80),
+                                        child: Column(
+                                          children: [
+                                            Icon(cardStyle['icon'], size: 55, color: SoseangTheme.border),
+                                            const SizedBox(height: 10),
+                                            const Text('이 방은 현재 텅 비어있습니다.\n대기실에서 관련 사진을 저장해 보세요!', textAlign: TextAlign.center, style: TextStyle(color: SoseangTheme.textMuted, fontSize: 13)),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  }
+
+                                  return ListView.builder(
+                                    shrinkWrap: true,
+                                    physics: const NeverScrollableScrollPhysics(),
+                                    itemCount: filteredCards.length,
+                                    itemBuilder: (context, index) {
+                                      final card = filteredCards[index];
+                                      return Card(
+                                        margin: const EdgeInsets.symmetric(vertical: 8),
+                                        elevation: 2,
+                                        color: SoseangTheme.warmWhite,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(14),
+                                          side: BorderSide(color: cardStyle['bgColor'] ?? cardStyle['color'], width: 1.5),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            if (card['imagePath'] != null)
+                                              ClipRRect(
+                                                borderRadius: const BorderRadius.only(topLeft: Radius.circular(14), topRight: Radius.circular(14)),
+                                                child: Image.file(
+                                                  File(card['imagePath']),
+                                                  width: double.infinity,
+                                                  height: 150,
+                                                  fit: BoxFit.cover,
+                                                ),
+                                              ),
+                                            ListTile(
+                                              onTap: () => _showCardDetail(context, card, cardStyle),
+                                              leading: CircleAvatar(
+                                                backgroundColor: (cardStyle['bgColor'] as Color?)?.withValues(alpha: 0.3) ?? cardStyle['color'].withValues(alpha: 0.15),
+                                                child: Icon(cardStyle['icon'], color: cardStyle['color'], size: 18),
+                                              ),
+                                              title: Text(card['title'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: SoseangTheme.textDark)),
+                                              subtitle: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  if (card['extraInfo'].toString().isNotEmpty)
+                                                    Padding(
+                                                      padding: const EdgeInsets.only(top: 4, bottom: 4),
+                                                      child: Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                        decoration: BoxDecoration(
+                                                          color: (cardStyle['bgColor'] as Color?)?.withValues(alpha: 0.3) ?? cardStyle['color'].withValues(alpha: 0.1),
+                                                          borderRadius: BorderRadius.circular(4),
+                                                        ),
+                                                        child: Text(card['extraInfo'], style: TextStyle(color: cardStyle['color'], fontSize: 10, fontWeight: FontWeight.bold)),
+                                                      ),
+                                                    ),
+                                                  Text(card['content'], maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, color: SoseangTheme.textMuted)),
+                                                ],
+                                              ),
+                                              trailing: Icon(Icons.arrow_forward_ios, size: 12, color: SoseangTheme.textMuted),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                  ),
                 ),
-                ListTile(
-                  contentPadding: const EdgeInsets.only(left: 45),
-                  leading: const Icon(Icons.confirmation_number, color: Colors.cyan, size: 18),
-                  title: const Text('기프티콘', style: TextStyle(fontSize: 13)),
-                  selected: currentMenu == 'cat_0_1',
-                  onTap: () {
-                    ref.read(currentMenuProvider.notifier).state = 'cat_0_1';
-                    Navigator.pop(context);
-                  },
-                ),
-              ],
+              ),
             ),
-            
-            ListTile(
-              leading: const Icon(Icons.map, color: Colors.teal),
-              title: const Text('장소 (PLACE)'),
-              selected: currentMenu == 'cat_1',
-              onTap: () {
-                ref.read(currentMenuProvider.notifier).state = 'cat_1';
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.shopping_bag, color: Colors.pink),
-              title: const Text('위시리스트 (WISHLIST)'),
-              selected: currentMenu == 'cat_2',
-              onTap: () {
-                ref.read(currentMenuProvider.notifier).state = 'cat_2';
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.note, color: Colors.amber),
-              title: const Text('메모 (MEMO)'),
-              selected: currentMenu == 'cat_3',
-              onTap: () {
-                ref.read(currentMenuProvider.notifier).state = 'cat_3';
-                Navigator.pop(context);
-              },
+          ),
+        ],
+      ),
+      ),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: SoseangTheme.ivory,
+          border: const Border(top: BorderSide(color: SoseangTheme.border, width: 1)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, -2),
             ),
           ],
         ),
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: currentMenu == 'home'
-              ? Column(
-                  children: [
-                    if (pickedImages.isEmpty) ...[
-                      Container(
-                        width: double.infinity,
-                        height: 180,
-                        decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.grey[300]!)),
-                        child: const Center(child: Text('소생할 스크린샷들을 선택해 주세요.\n(이미지 고화질 줌인 장착)', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 13))),
-                      ),
-                      const SizedBox(height: 20),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: () => _pickMultiImages(ref),
-                          icon: const Icon(Icons.photo_library),
-                          label: const Text('갤러리에서 사진 무더기로 가져오기'),
-                          style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
-                        ),
-                      ),
-                    ] else ...[
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('⏳ 소생 대기열 목록 (${pickedImages.length}장 남음)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.deepPurple)),
-                          TextButton.icon(
-                            onPressed: () => _removeActiveImage(ref),
-                            icon: const Icon(Icons.delete_outline, size: 14, color: Colors.red),
-                            label: const Text('이 사진 삭제', style: TextStyle(color: Colors.red, fontSize: 11)),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 5),
-                      Container(
-                        height: 80,
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: pickedImages.length,
-                          itemBuilder: (context, index) {
-                            bool isActive = index == activeIndex;
-                            return GestureDetector(
-                              onTap: () {
-                                ref.read(activeImageIndexProvider.notifier).state = index;
-                                ref.read(ocrStatusProvider.notifier).state = 'idle';
-                              },
-                              child: Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 4),
-                                width: 60,
-                                decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: isActive ? Colors.deepPurple : Colors.grey[300]!, width: isActive ? 3 : 1)),
-                                child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.file(File(pickedImages[index].path), fit: BoxFit.cover)),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 15),
-
-                      Stack(
-                        children: [
-                          Container(
-                            width: double.infinity,
-                            height: 220,
-                            decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(12)),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Image.file(File(pickedImages[activeIndex].path), fit: BoxFit.contain),
-                            ),
-                          ),
-                          Positioned(
-                            right: 8,
-                            bottom: 8,
-                            child: ElevatedButton.icon(
-                              onPressed: () async {
-                                final cropped = await _cropImage(context, pickedImages[activeIndex].path);
-                                if (cropped != null) {
-                                  final list = [...pickedImages];
-                                  list[activeIndex] = cropped;
-                                  ref.read(pickedImagesProvider.notifier).state = list;
-                                  ref.read(ocrStatusProvider.notifier).state = 'idle';
-                                }
-                              },
-                              icon: const Icon(Icons.crop, size: 14),
-                              label: const Text('사진 자르기', style: TextStyle(fontSize: 10)),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.black.withValues(alpha: 0.6),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                minimumSize: Size.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 15),
-
-                      if (ocrStatus == 'idle')
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: () => _runSingleOCR(ref, pickedImages[activeIndex]),
-                            icon: const Icon(Icons.psychology),
-                            label: const Text('⚡ 이 사진 텍스트 추출 및 편집'),
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.green[100], foregroundColor: Colors.green[900]),
-                          ),
-                        ),
-
-                      if (ocrStatus == 'loading')
-                        const Padding(padding: EdgeInsets.all(15.0), child: CircularProgressIndicator(color: Colors.green)),
-
-                      if (ocrStatus == 'success' && extractedText.isNotEmpty) ...[
-                        const SizedBox(height: 15),
-                        Card(
-                          elevation: 4,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15), side: BorderSide(color: style['color'], width: 2.5)),
-                          color: Colors.white,
-                          child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('📁 저장할 대분류 카테고리', style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.bold)),
-                                const SizedBox(height: 6),
-                                Wrap(
-                                  spacing: 6,
-                                  children: List.generate(4, (index) {
-                                    String chipLabel = "메모";
-                                    if (index == 0) chipLabel = "일정";
-                                    if (index == 1) chipLabel = "장소";
-                                    if (index == 2) chipLabel = "위시";
-                                    return ChoiceChip(
-                                      label: Text(chipLabel, style: const TextStyle(fontSize: 11)),
-                                      selected: selectedCategory == index,
-                                      onSelected: (selected) {
-                                        if (selected) ref.read(selectedCategoryProvider.notifier).state = index;
-                                      },
-                                    );
-                                  }),
-                                ),
-                                const Divider(),
-                                
-                                if (selectedCategory == 0) ...[
-                                  Text('🎟️ 일정 세부 분류 선택', style: TextStyle(fontSize: 12, color: Colors.blue[800], fontWeight: FontWeight.bold)),
-                                  const SizedBox(height: 6),
-                                  DropdownButtonFormField<int>(
-                                    value: selectedSubCategory,
-                                    decoration: const InputDecoration(border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
-                                    items: const [
-                                      DropdownMenuItem(value: 0, child: Text('🗓️ 일반 스케줄 일정', style: TextStyle(fontSize: 14))),
-                                      DropdownMenuItem(value: 1, child: Text('🎟️ 기프티콘 / 쿠폰 교환권', style: TextStyle(fontSize: 14))),
-                                    ],
-                                    onChanged: (val) {
-                                      if (val != null) ref.read(selectedSubCategoryProvider.notifier).state = val;
-                                    },
-                                  ),
-                                  const SizedBox(height: 15),
-                                ],
-
-                                Row(
-                                  children: [
-                                    Icon(style['icon'], color: style['color']),
-                                    const SizedBox(width: 8),
-                                    Text(style['name'], style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: style['color'])),
-                                  ],
-                                ),
-                                const SizedBox(height: 15),
-                                TextField(
-                                  controller: titleController,
-                                  decoration: const InputDecoration(labelText: '📌 제목 수정', border: OutlineInputBorder()),
-                                ),
-                                const SizedBox(height: 15),
-                                
-                                if (selectedCategory == 0) ...[
-                                  TextField(
-                                    controller: scheduleDateController,
-                                    decoration: InputDecoration(
-                                      labelText: selectedSubCategory == 1 ? '⏰ 기프티콘 유효기간 입력' : '⏰ 일정 일시 입력', 
-                                      border: const OutlineInputBorder(), 
-                                      prefixIcon: const Icon(Icons.access_time, color: Colors.blue)
-                                    ),
-                                  ),
-                                  const SizedBox(height: 15),
-                                ],
-                                if (selectedCategory == 1) ...[
-                                  TextField(
-                                    controller: placeLocationController,
-                                    decoration: const InputDecoration(labelText: '📍 장소 위치/주소 입력', border: OutlineInputBorder(), prefixIcon: Icon(Icons.pin_drop, color: Colors.teal)),
-                                  ),
-                                  const SizedBox(height: 15),
-                                ],
-                                
-                                TextField(
-                                  controller: contentController,
-                                  maxLines: 4,
-                                  decoration: const InputDecoration(labelText: '📝 상세 본문 수정', border: OutlineInputBorder()),
-                                ),
-                                const SizedBox(height: 10),
-                                const DynamicFeaturesCard(),
-                                const SizedBox(height: 15),
-                                Row(
-                                   children: [
-                                     Expanded(
-                                       child: ElevatedButton.icon(
-                                         onPressed: () => _runAIAnalysis(context, ref, pickedImages[activeIndex]),
-                                         icon: const Icon(Icons.auto_awesome),
-                                         label: const Text('AI 분석 (LLM)'),
-                                         style: ElevatedButton.styleFrom(
-                                           backgroundColor: Colors.deepPurple,
-                                           foregroundColor: Colors.white,
-                                           padding: const EdgeInsets.symmetric(vertical: 12),
-                                         ),
-                                       ),
-                                     ),
-                                     const SizedBox(width: 10),
-                                     Expanded(
-                                       child: ElevatedButton.icon(
-                                         onPressed: () => _saveCurrentCardAndRemoveFromQueue(context, ref),
-                                         icon: const Icon(Icons.save),
-                                         label: const Text('바로 저장하기'),
-                                         style: ElevatedButton.styleFrom(
-                                           backgroundColor: style['color'],
-                                           foregroundColor: Colors.white,
-                                           padding: const EdgeInsets.symmetric(vertical: 12),
-                                         ),
-                                       ),
-                                     ),
-                                   ],
-                                 )
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ]
-                  ],
-                )
-              : Column(
-                  children: [
-                    NavigatorBuilder(
-                      builder: (context) {
-                        List<String> menuParts = currentMenu.split('_');
-                        int targetCatId = int.parse(menuParts[1]);
-                        int? targetSubCatId = menuParts.length > 2 ? int.parse(menuParts[2]) : null;
-
-                        final filteredCards = savedCards.where((c) {
-                          if (targetSubCatId != null) {
-                            return c['categoryId'] == targetCatId && c['subCategoryId'] == targetSubCatId;
-                          }
-                          return c['categoryId'] == targetCatId;
-                        }).toList();
-
-                        final cardStyle = _getCategoryStyle(targetCatId, subCategory: targetSubCatId ?? 0);
-
-                        if (filteredCards.isEmpty) {
-                          return Center(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 100),
-                              child: Column(
-                                children: [
-                                  Icon(cardStyle['icon'], size: 55, color: Colors.grey[300]),
-                                  const SizedBox(height: 10),
-                                  Text('이 방은 현재 텅 비어있습니다.\n대기열에서 관련 사진을 저장해 보세요!', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[500], fontSize: 13)),
-                                ],
-                              ),
-                            ),
-                          );
-                        }
-
-                        return ListView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: filteredCards.length,
-                          itemBuilder: (context, index) {
-                            final card = filteredCards[index];
-                            return Card(
-                              margin: const EdgeInsets.symmetric(vertical: 8),
-                              elevation: 2,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: cardStyle['color'], width: 1.5)),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (card['imagePath'] != null)
-                                    ClipRRect(
-                                      borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12)),
-                                      child: Image.file(
-                                        File(card['imagePath']),
-                                        width: double.infinity,
-                                        height: 150,
-                                        fit: BoxFit.cover,
-                                      ),
-                                    ),
-                                  ListTile(
-                                    onTap: () => _showCardDetail(context, card, cardStyle),
-                                    leading: CircleAvatar(
-                                      backgroundColor: cardStyle['color'].withOpacity(0.15),
-                                      child: Icon(cardStyle['icon'], color: cardStyle['color'], size: 18),
-                                    ),
-                                    title: Text(card['title'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                    subtitle: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        if (card['extraInfo'].toString().isNotEmpty)
-                                          Padding(
-                                            padding: const EdgeInsets.only(top: 4, bottom: 4),
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(color: cardStyle['color'].withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-                                              child: Text(card['extraInfo'], style: TextStyle(color: cardStyle['color'], fontSize: 10, fontWeight: FontWeight.bold)),
-                                            ),
-                                          ),
-                                        Text(card['content'], maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
-                                      ],
-                                    ),
-                                    trailing: const Icon(Icons.arrow_forward_ios, size: 12),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ],
+        child: BottomNavigationBar(
+          currentIndex: currentTabIndex,
+          onTap: (index) {
+            switch (index) {
+              case 0: ref.read(currentMenuProvider.notifier).state = 'cat_0_0'; break;
+              case 1: ref.read(currentMenuProvider.notifier).state = 'cat_1'; break;
+              case 2: ref.read(currentMenuProvider.notifier).state = 'home'; break;
+              case 3: ref.read(currentMenuProvider.notifier).state = 'cat_2'; break;
+              case 4: ref.read(currentMenuProvider.notifier).state = 'cat_3'; break;
+            }
+          },
+          type: BottomNavigationBarType.fixed,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          selectedItemColor: themeDark,
+          unselectedItemColor: SoseangTheme.textMuted,
+          selectedFontSize: 11,
+          unselectedFontSize: 10,
+          items: [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.event_note, color: currentTabIndex == 0 ? SoseangTheme.scheduleDark : SoseangTheme.textMuted),
+              activeIcon: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: SoseangTheme.scheduleColor.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.event_note, color: SoseangTheme.scheduleDark),
+              ),
+              label: '일정',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.place, color: currentTabIndex == 1 ? SoseangTheme.placeDark : SoseangTheme.textMuted),
+              activeIcon: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: SoseangTheme.placeColor.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.place, color: SoseangTheme.placeDark),
+              ),
+              label: '장소',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.camera_alt_outlined, color: currentTabIndex == 2 ? SoseangTheme.textDark : SoseangTheme.textMuted),
+              activeIcon: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: SoseangTheme.cream,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: SoseangTheme.border, width: 1.5),
                 ),
+                child: const Icon(Icons.camera_alt, color: SoseangTheme.textDark),
+              ),
+              label: '대기실',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.favorite_border, color: currentTabIndex == 3 ? SoseangTheme.wishDark : SoseangTheme.textMuted),
+              activeIcon: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: SoseangTheme.wishColor.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.favorite, color: SoseangTheme.wishDark),
+              ),
+              label: '위시',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.sticky_note_2_outlined, color: currentTabIndex == 4 ? SoseangTheme.memoDark : SoseangTheme.textMuted),
+              activeIcon: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: SoseangTheme.memoColor.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.sticky_note_2, color: SoseangTheme.memoDark),
+              ),
+              label: '메모',
+            ),
+          ],
         ),
       ),
     );
@@ -1297,4 +1741,54 @@ class DynamicFeaturesCard extends ConsumerWidget {
       ref.read(titleControllerProvider).text = item['product_name'] ?? '';
     }
   }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🎨 투톤 마블링 배경 CustomPainter
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+class MarblePainter extends CustomPainter {
+  final Color color1; // 크림/베이지 (고정)
+  final Color color2; // 카테고리 테마색 (변동)
+
+  MarblePainter({required this.color1, required this.color2});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+
+    // 전체를 color1(크림)로 칠하기
+    canvas.drawRect(Rect.fromLTWH(0, 0, w, h), Paint()..color = color1);
+
+    // 1. 상단 물결 띠 (좌측 상단 일부는 크림색으로 남김)
+    final path1 = Path()
+      ..moveTo(0, h * 0.25)
+      ..cubicTo(w * 0.3, h * 0.35, w * 0.7, h * 0.05, w, h * 0.2)
+      ..lineTo(w, 0)
+      ..lineTo(w * 0.3, 0)
+      ..cubicTo(w * 0.15, h * 0.05, w * 0.05, h * 0.1, 0, h * 0.1)
+      ..close();
+    canvas.drawPath(path1, Paint()..color = color2);
+
+    // 2. 중앙을 가로지르는 크고 두꺼운 물결 띠
+    final path2 = Path()
+      ..moveTo(0, h * 0.55)
+      ..cubicTo(w * 0.4, h * 0.75, w * 0.6, h * 0.35, w, h * 0.5)
+      ..lineTo(w, h * 0.8)
+      ..cubicTo(w * 0.6, h * 0.65, w * 0.4, h * 0.95, 0, h * 0.8)
+      ..close();
+    canvas.drawPath(path2, Paint()..color = color2);
+
+    // 3. 하단 좌측 모서리 작은 물결
+    final path3 = Path()
+      ..moveTo(0, h * 0.95)
+      ..cubicTo(w * 0.2, h * 0.85, w * 0.5, h * 0.9, w * 0.7, h)
+      ..lineTo(0, h)
+      ..close();
+    canvas.drawPath(path3, Paint()..color = color2);
+  }
+
+  @override
+  bool shouldRepaint(MarblePainter oldDelegate) =>
+      oldDelegate.color1 != color1 || oldDelegate.color2 != color2;
 }
