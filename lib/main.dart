@@ -122,6 +122,8 @@ class OcrDraft {
   final String placeLocation;
   final Map<String, dynamic>? aiFields;
 
+  final String aiStatus; // 'idle', 'loading', 'success', 'error'
+
   OcrDraft({
     required this.imagePath,
     required this.status,
@@ -133,7 +135,35 @@ class OcrDraft {
     this.scheduleDate = '',
     this.placeLocation = '',
     this.aiFields,
+    this.aiStatus = 'idle',
   });
+
+  OcrDraft copyWith({
+    String? status,
+    String? extractedText,
+    String? title,
+    String? content,
+    int? category,
+    int? subCategory,
+    String? scheduleDate,
+    String? placeLocation,
+    Map<String, dynamic>? aiFields,
+    String? aiStatus,
+  }) {
+    return OcrDraft(
+      imagePath: this.imagePath,
+      status: status ?? this.status,
+      extractedText: extractedText ?? this.extractedText,
+      title: title ?? this.title,
+      content: content ?? this.content,
+      category: category ?? this.category,
+      subCategory: subCategory ?? this.subCategory,
+      scheduleDate: scheduleDate ?? this.scheduleDate,
+      placeLocation: placeLocation ?? this.placeLocation,
+      aiFields: aiFields ?? this.aiFields,
+      aiStatus: aiStatus ?? this.aiStatus,
+    );
+  }
 }
 
 // 캐시 및 백그라운드 큐 관리 프로바이더
@@ -152,8 +182,7 @@ final selectedCategoryProvider = StateProvider<int>((ref) => 3);
 // 일정 카테고리 내부 세부 분류 (0: 일반 일정, 1: 기프티콘)
 final selectedSubCategoryProvider = StateProvider<int>((ref) => 0);
 
-// AI 분석에서 응답받은 원본 가변 필드들 및 다중 항목 페이징 상태
-final aiResponseFieldsProvider = StateProvider<Map<String, dynamic>?>((ref) => null);
+// AI 다중 항목 페이징 상태
 final currentItemIndexProvider = StateProvider<int>((ref) => 0);
 
 // [사이드 메뉴 상태] 'home', 'cat_0_0'(일반일정), 'cat_0_1'(기프티콘), 'cat_1', 'cat_2', 'cat_3'
@@ -167,6 +196,9 @@ final placeLocationProvider = Provider((ref) => TextEditingController());
 
 // 전역 데이터 보관함
 final savedCardsProvider = StateProvider<List<Map<String, dynamic>>>((ref) => []);
+// 선택 삭제 모드
+final isSelectModeProvider = StateProvider<bool>((ref) => false);
+final selectedCardsIdsProvider = StateProvider<Set<int>>((ref) => {});
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -216,7 +248,7 @@ class HomeScreen extends ConsumerWidget {
     ref.read(contentControllerProvider).clear();
     ref.read(scheduleDateProvider).clear();
     ref.read(placeLocationProvider).clear();
-    ref.read(aiResponseFieldsProvider.notifier).state = null;
+    // (Removed aiResponseFieldsProvider state reset)
     ref.read(currentItemIndexProvider.notifier).state = 0;
   }
 
@@ -357,7 +389,7 @@ class HomeScreen extends ConsumerWidget {
       ref.read(selectedSubCategoryProvider.notifier).state = draft.subCategory;
       ref.read(scheduleDateProvider).text = draft.scheduleDate;
       ref.read(placeLocationProvider).text = draft.placeLocation;
-      ref.read(aiResponseFieldsProvider.notifier).state = draft.aiFields;
+      // (Removed aiResponseFieldsProvider assignment)
     }
   }
 
@@ -422,17 +454,9 @@ class HomeScreen extends ConsumerWidget {
       final updatedCategory = category ?? existingDraft.category;
       final updatedSubCat = subCategory ?? existingDraft.subCategory;
 
-      cache[activePath] = OcrDraft(
-        imagePath: activePath,
-        status: existingDraft.status,
-        extractedText: existingDraft.extractedText,
-        title: existingDraft.title,
-        content: existingDraft.content,
+      cache[activePath] = existingDraft.copyWith(
         category: updatedCategory,
         subCategory: updatedSubCat,
-        scheduleDate: existingDraft.scheduleDate,
-        placeLocation: existingDraft.placeLocation,
-        aiFields: existingDraft.aiFields,
       );
       ref.read(draftCacheProvider.notifier).state = cache;
     }
@@ -580,10 +604,14 @@ class HomeScreen extends ConsumerWidget {
     }
 
     // 4. API 서버 연동 및 카테고리 기기 분류 주입
-    ref.read(ocrStatusProvider.notifier).state = 'loading';
+    final cacheMap = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
+    if (cacheMap.containsKey(image.path)) {
+      cacheMap[image.path] = cacheMap[image.path]!.copyWith(aiStatus: 'loading');
+      ref.read(draftCacheProvider.notifier).state = cacheMap;
+    }
     try {
       final dio = Dio();
-      const serverUrl = 'http://172.30.1.84:8000/api/analyze/v2';
+      const serverUrl = 'http://172.30.1.59:8000/api/analyze/v2';
       
       final localCategoryIndex = ref.read(selectedCategoryProvider);
       final indexToType = {
@@ -609,10 +637,6 @@ class HomeScreen extends ConsumerWidget {
         final typeStr = data['type'] as String;
         final fields = data['fields'] as Map<String, dynamic>;
 
-        // AI 응답 상태 보존 및 페이징 초기화
-        ref.read(aiResponseFieldsProvider.notifier).state = fields;
-        ref.read(currentItemIndexProvider.notifier).state = 0;
-        
         final typeToIndex = {
           'SCHEDULE': 0,
           'PLACE': 1,
@@ -620,11 +644,11 @@ class HomeScreen extends ConsumerWidget {
           'MEMO': 3,
         };
         final categoryIndex = typeToIndex[typeStr] ?? 3;
-        ref.read(selectedCategoryProvider.notifier).state = categoryIndex;
-        
-        // 상세 본문 수정 부분에 서버에서 가져온 json정보를 포맷팅하여 주입
-        final prettyJson = const JsonEncoder.withIndent('  ').convert(fields);
-        ref.read(contentControllerProvider).text = prettyJson;
+
+        int subCategoryIndex = 0;
+        String newTitle = '새로운 메모';
+        String newSchedule = '';
+        String newPlace = '';
 
         // 1. SCHEDULE 매핑
         if (categoryIndex == 0) {
@@ -634,12 +658,12 @@ class HomeScreen extends ConsumerWidget {
                              maskedText.contains('기프티콘') || 
                              maskedText.contains('쿠폰');
                              
-          ref.read(selectedSubCategoryProvider.notifier).state = isGifticon ? 1 : 0;
-          ref.read(titleControllerProvider).text = fields['title'] ?? '새로운 일정';
+          subCategoryIndex = isGifticon ? 1 : 0;
+          newTitle = fields['title'] ?? '새로운 일정';
           
           final expiryDate = fields['expires_at'] as String?;
           final startDate = fields['start_at'] as String?;
-          ref.read(scheduleDateProvider).text = expiryDate ?? startDate ?? '';
+          newSchedule = expiryDate ?? startDate ?? '';
         }
         // 2. PLACE 매핑
         else if (categoryIndex == 1) {
@@ -647,8 +671,8 @@ class HomeScreen extends ConsumerWidget {
           if (fields['items'] != null && (fields['items'] as List).isNotEmpty) {
             placeFields = (fields['items'] as List).first as Map<String, dynamic>;
           }
-          ref.read(titleControllerProvider).text = placeFields['name'] ?? '새로운 장소';
-          ref.read(placeLocationProvider).text = placeFields['address'] ?? placeFields['region'] ?? '';
+          newTitle = placeFields['name'] ?? '새로운 장소';
+          newPlace = placeFields['address'] ?? placeFields['region'] ?? '';
         }
         // 3. WISHLIST 매핑
         else if (categoryIndex == 2) {
@@ -656,11 +680,38 @@ class HomeScreen extends ConsumerWidget {
           if (fields['items'] != null && (fields['items'] as List).isNotEmpty) {
             itemFields = (fields['items'] as List).first as Map<String, dynamic>;
           }
-          ref.read(titleControllerProvider).text = itemFields['product_name'] ?? '새로운 위시 상품';
+          newTitle = itemFields['product_name'] ?? '새로운 위시 상품';
         }
         // 4. MEMO 매핑
         else if (categoryIndex == 3) {
-          ref.read(titleControllerProvider).text = fields['title'] ?? '새로운 메모';
+          newTitle = fields['title'] ?? '새로운 메모';
+        }
+
+        // 캐시 업데이트: 다른 탭으로 이동해도 결과가 유지되도록 draft 전체에 저장
+        final cacheMap2 = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
+        if (cacheMap2.containsKey(image.path)) {
+          cacheMap2[image.path] = cacheMap2[image.path]!.copyWith(
+            aiStatus: 'success',
+            aiFields: fields,
+            category: categoryIndex,
+            subCategory: subCategoryIndex,
+            title: newTitle,
+            scheduleDate: newSchedule,
+            placeLocation: newPlace,
+          );
+          ref.read(draftCacheProvider.notifier).state = cacheMap2;
+        }
+        ref.read(currentItemIndexProvider.notifier).state = 0;
+
+        // 화면 갱신 (선택된 이미지가 현재 이미지와 같은 경우에만)
+        final pickedImages = ref.read(pickedImagesProvider);
+        final activeIndex = ref.read(activeImageIndexProvider);
+        if (pickedImages.isNotEmpty && activeIndex < pickedImages.length && pickedImages[activeIndex].path == image.path) {
+          ref.read(selectedCategoryProvider.notifier).state = categoryIndex;
+          ref.read(selectedSubCategoryProvider.notifier).state = subCategoryIndex;
+          ref.read(titleControllerProvider).text = newTitle;
+          ref.read(scheduleDateProvider).text = newSchedule;
+          ref.read(placeLocationProvider).text = newPlace;
         }
 
         print('🎯 AI 로컬 서버 분류 성공: $typeStr (Index: $categoryIndex)');
@@ -683,6 +734,7 @@ class HomeScreen extends ConsumerWidget {
         'MEMO': 3,
       };
       int finalCategory = typeToIndex[aiResultType] ?? 3;
+      int finalSubCategory = 0;
 
       final lowerText = maskedText.toLowerCase();
       final isIDCard = ['주민등록증', '운전면허증', '여권', 'passport', 'driver\'s license', 'driver’s license'].any((k) => lowerText.contains(k)) ||
@@ -692,23 +744,47 @@ class HomeScreen extends ConsumerWidget {
         finalCategory = 3; // 신분증/여권은 무조건 메모(MEMO) 카테고리로 강제 지정
       }
 
-      ref.read(selectedCategoryProvider.notifier).state = finalCategory;
-
       if (finalCategory == 0) {
         final isGifticon = ['기프티콘', '쿠폰', '바코드', '교환권', '모바일상품권', '모바일쿠폰', '선물하기', '교환처'].any((k) => lowerText.contains(k)) ||
                            lowerText.contains('사용기한') || lowerText.contains('유효기간');
         if (isGifticon) {
-          ref.read(selectedSubCategoryProvider.notifier).state = 1; // 기프티콘
+          finalSubCategory = 1; // 기프티콘
         } else {
-          ref.read(selectedSubCategoryProvider.notifier).state = 0; // 일반 일정
+          finalSubCategory = 0; // 일반 일정
         }
       }
+
+      // Fallback 캐시 업데이트
+      final cacheMapFallback = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
+      if (cacheMapFallback.containsKey(image.path)) {
+        cacheMapFallback[image.path] = cacheMapFallback[image.path]!.copyWith(
+          aiStatus: 'error',
+          category: finalCategory,
+          subCategory: finalSubCategory,
+        );
+        ref.read(draftCacheProvider.notifier).state = cacheMapFallback;
+      }
+
+      final pickedImages = ref.read(pickedImagesProvider);
+      final activeIndex = ref.read(activeImageIndexProvider);
+      if (pickedImages.isNotEmpty && activeIndex < pickedImages.length && pickedImages[activeIndex].path == image.path) {
+        ref.read(selectedCategoryProvider.notifier).state = finalCategory;
+        ref.read(selectedSubCategoryProvider.notifier).state = finalSubCategory;
+      }
+
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('⚠️ AI 서버 연결 실패: 로컬 규칙으로 안전 판정 완료!'))
       );
     } finally {
-      ref.read(ocrStatusProvider.notifier).state = 'success';
+      final cacheMap3 = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
+      if (cacheMap3.containsKey(image.path)) {
+        final currentStatus = cacheMap3[image.path]!.aiStatus;
+        if (currentStatus == 'loading') {
+          cacheMap3[image.path] = cacheMap3[image.path]!.copyWith(aiStatus: 'idle');
+          ref.read(draftCacheProvider.notifier).state = cacheMap3;
+        }
+      }
     }
   }
 
@@ -758,13 +834,18 @@ class HomeScreen extends ConsumerWidget {
         3: 'MEMO',
       };
       
+      final activePath = images[activeIndex].path;
+      final aiFields = ref.read(draftCacheProvider)[activePath]?.aiFields;
+      
       final dbRow = {
         'type': indexToType[categoryId] ?? 'MEMO',
         'confidence': 1.0, // 사용자가 명시적으로 수정한 최종 승인이므로 1.0 부여
         'fields': jsonEncode({
+          if (aiFields != null) ...aiFields,
           'title': title,
           'content': content,
           'extraInfo': extraInfo,
+          'categoryId': categoryId,
           'subCategoryId': categoryId == 0 ? subCategoryId : 0,
         }),
         'image_path': finalImagePath,
@@ -851,18 +932,20 @@ class HomeScreen extends ConsumerWidget {
   }
 
   // 보관함 항목 클릭 시 띄워줄 상세 디테일 모달 팝업창 시스템
-  void _showCardDetail(BuildContext context, Map<String, dynamic> card, Map<String, dynamic> cardStyle) {
+  void _showCardDetail(BuildContext context, WidgetRef ref, Map<String, dynamic> card, Map<String, dynamic> cardStyle) {
     showDialog(
       context: context,
       builder: (context) {
         return Dialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (card['imagePath'] != null)
+          child: Stack(
+            children: [
+              SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (card['imagePath'] != null)
                   GestureDetector(
                     onTap: () => _showEnlargedImage(context, card['imagePath']),
                     child: Stack(
@@ -942,23 +1025,157 @@ class HomeScreen extends ConsumerWidget {
                       const SizedBox(height: 5),
                       Text(card['content'], style: const TextStyle(fontSize: 14, height: 1.4, color: SoseangTheme.textDark)),
                       const SizedBox(height: 25),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: () => Navigator.pop(context),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: cardStyle['color'],
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () {
+                                final titleCtrl = TextEditingController(text: card['title']);
+                                final extraCtrl = TextEditingController(text: card['extraInfo']);
+                                final contentCtrl = TextEditingController(text: card['content']);
+                                int editCatId = card['categoryId'] ?? 3;
+                                
+                                showDialog(
+                                  context: context,
+                                  builder: (ctx) => StatefulBuilder(
+                                    builder: (context, setState) {
+                                      return AlertDialog(
+                                        title: const Text('카드 수정'),
+                                        content: SizedBox(
+                                          width: MediaQuery.of(ctx).size.width * 0.9,
+                                          child: SingleChildScrollView(
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                DropdownButtonFormField<int>(
+                                                  value: editCatId,
+                                                  decoration: const InputDecoration(labelText: '카테고리'),
+                                                  items: const [
+                                                    DropdownMenuItem(value: 0, child: Text('일정')),
+                                                    DropdownMenuItem(value: 1, child: Text('장소')),
+                                                    DropdownMenuItem(value: 2, child: Text('위시리스트')),
+                                                    DropdownMenuItem(value: 3, child: Text('메모')),
+                                                  ],
+                                                  onChanged: (val) {
+                                                    if (val != null) setState(() => editCatId = val);
+                                                  },
+                                                ),
+                                                const SizedBox(height: 10),
+                                                TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: '제목')),
+                                                const SizedBox(height: 10),
+                                                TextField(controller: extraCtrl, decoration: const InputDecoration(labelText: '추가 정보')),
+                                                const SizedBox(height: 10),
+                                                TextField(controller: contentCtrl, maxLines: 5, decoration: const InputDecoration(labelText: '추출 본문')),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                        actions: [
+                                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
+                                          TextButton(
+                                            onPressed: () async {
+                                              final newFields = jsonEncode({
+                                                'title': titleCtrl.text,
+                                                'content': contentCtrl.text,
+                                                'extraInfo': extraCtrl.text,
+                                                'categoryId': editCatId,
+                                                'subCategoryId': card['subCategoryId'],
+                                              });
+                                              final typeStr = const ['SCHEDULE', 'PLACE', 'WISHLIST', 'MEMO'][editCatId];
+                                              
+                                              await DatabaseHelper.instance.updateTypeAndFields(int.parse(card['id']), typeStr, newFields);
+                                              
+                                              ref.read(savedCardsProvider.notifier).update((state) {
+                                                return state.map((c) {
+                                                  if (c['id'] == card['id']) {
+                                                    return {
+                                                      ...c,
+                                                      'title': titleCtrl.text,
+                                                      'content': contentCtrl.text,
+                                                      'extraInfo': extraCtrl.text,
+                                                      'categoryId': editCatId,
+                                                      'type': typeStr,
+                                                    };
+                                                  }
+                                                  return c;
+                                                }).toList();
+                                              });
+                                              Navigator.pop(ctx);
+                                              Navigator.pop(context);
+                                            },
+                                            child: const Text('저장', style: TextStyle(fontWeight: FontWeight.bold)),
+                                          ),
+                                        ],
+                                      );
+                                    }
+                                  ),
+                                );
+                              },
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: cardStyle['color'],
+                                side: BorderSide(color: cardStyle['color']),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              child: const Text('수정'),
+                            ),
                           ),
-                          child: const Text('확인 완료'),
-                        ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text('카드 삭제'),
+                                    content: const Text('정말로 이 카드를 삭제하시겠습니까?'),
+                                    actions: [
+                                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(ctx, true),
+                                        child: const Text('삭제', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (confirm == true) {
+                                  await DatabaseHelper.instance.deleteScreenshot(int.parse(card['id']));
+                                  ref.read(savedCardsProvider.notifier).update((state) => state.where((c) => c['id'] != card['id']).toList());
+                                  if (context.mounted) Navigator.pop(context);
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.redAccent,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              child: const Text('삭제'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
               ],
             ),
+          ),
+          Positioned(
+            top: 10,
+            right: 10,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.black45,
+                    shape: BoxShape.circle,
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                    constraints: const BoxConstraints(),
+                    padding: const EdgeInsets.all(8),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       },
@@ -1346,16 +1563,17 @@ class HomeScreen extends ConsumerWidget {
                                             const SizedBox(height: 15),
                                           ],
                                           
-                                          TextField(
-                                            controller: contentController,
-                                            maxLines: 4,
-                                            decoration: InputDecoration(
-                                              labelText: '📝 상세 본문 수정',
-                                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                                              fillColor: SoseangTheme.ivory,
-                                              filled: true,
+                                          if ((ref.watch(draftCacheProvider)[pickedImages[activeIndex].path])?.aiFields == null)
+                                            TextField(
+                                              controller: contentController,
+                                              maxLines: 4,
+                                              decoration: InputDecoration(
+                                                labelText: '📝 원본 OCR 텍스트',
+                                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                                fillColor: SoseangTheme.ivory,
+                                                filled: true,
+                                              ),
                                             ),
-                                          ),
                                           const SizedBox(height: 10),
                                           const DynamicFeaturesCard(),
                                           const SizedBox(height: 15),
@@ -1363,9 +1581,13 @@ class HomeScreen extends ConsumerWidget {
                                              children: [
                                                Expanded(
                                                  child: ElevatedButton.icon(
-                                                   onPressed: () => _runAIAnalysis(context, ref, pickedImages[activeIndex]),
-                                                   icon: const Icon(Icons.auto_awesome),
-                                                   label: const Text('AI 분석 (LLM)'),
+                                                   onPressed: (ref.watch(draftCacheProvider)[pickedImages[activeIndex].path])?.aiStatus == 'loading' 
+                                                       ? null 
+                                                       : () => _runAIAnalysis(context, ref, pickedImages[activeIndex]),
+                                                   icon: (ref.watch(draftCacheProvider)[pickedImages[activeIndex].path])?.aiStatus == 'loading'
+                                                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                                       : const Icon(Icons.auto_awesome),
+                                                   label: Text((ref.watch(draftCacheProvider)[pickedImages[activeIndex].path])?.aiStatus == 'loading' ? '분석 중...' : 'AI 분석 (LLM)'),
                                                    style: ElevatedButton.styleFrom(
                                                      backgroundColor: SoseangTheme.textDark,
                                                      foregroundColor: Colors.white,
@@ -1435,80 +1657,153 @@ class HomeScreen extends ConsumerWidget {
                                   }).toList();
 
                                   final cardStyle = _getCategoryStyle(targetCatId, subCategory: targetSubCatId ?? 0);
+                                  final isSelectMode = ref.watch(isSelectModeProvider);
+                                  final selectedIds = ref.watch(selectedCardsIdsProvider);
 
-                                  if (filteredCards.isEmpty) {
-                                    return Center(
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 80),
-                                        child: Column(
-                                          children: [
-                                            Icon(cardStyle['icon'], size: 55, color: SoseangTheme.border),
-                                            const SizedBox(height: 10),
-                                            const Text('이 방은 현재 텅 비어있습니다.\n대기실에서 관련 사진을 저장해 보세요!', textAlign: TextAlign.center, style: TextStyle(color: SoseangTheme.textMuted, fontSize: 13)),
-                                          ],
-                                        ),
-                                      ),
-                                    );
-                                  }
-
-                                  return ListView.builder(
-                                    shrinkWrap: true,
-                                    physics: const NeverScrollableScrollPhysics(),
-                                    itemCount: filteredCards.length,
-                                    itemBuilder: (context, index) {
-                                      final card = filteredCards[index];
-                                      return Card(
-                                        margin: const EdgeInsets.symmetric(vertical: 8),
-                                        elevation: 2,
-                                        color: SoseangTheme.warmWhite,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(14),
-                                          side: BorderSide(color: cardStyle['bgColor'] ?? cardStyle['color'], width: 1.5),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            if (card['imagePath'] != null)
-                                              ClipRRect(
-                                                borderRadius: const BorderRadius.only(topLeft: Radius.circular(14), topRight: Radius.circular(14)),
-                                                child: Image.file(
-                                                  File(card['imagePath']),
-                                                  width: double.infinity,
-                                                  height: 150,
-                                                  fit: BoxFit.cover,
+                                  return Column(
+                                    children: [
+                                      if (filteredCards.isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.end,
+                                            children: [
+                                              if (isSelectMode) ...[
+                                                TextButton.icon(
+                                                  icon: const Icon(Icons.delete, color: Colors.red, size: 16),
+                                                  label: Text('선택 삭제 (${selectedIds.length})', style: const TextStyle(color: Colors.red)),
+                                                  onPressed: selectedIds.isEmpty ? null : () async {
+                                                    final confirm = await showDialog<bool>(
+                                                      context: context,
+                                                      builder: (ctx) => AlertDialog(
+                                                        title: const Text('선택 삭제'),
+                                                        content: Text('${selectedIds.length}개의 항목을 삭제하시겠습니까?'),
+                                                        actions: [
+                                                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
+                                                          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('삭제', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
+                                                        ],
+                                                      ),
+                                                    );
+                                                    if (confirm == true) {
+                                                      await DatabaseHelper.instance.deleteMultipleScreenshots(selectedIds.toList());
+                                                      ref.read(savedCardsProvider.notifier).update((state) => state.where((c) => !selectedIds.contains(int.parse(c['id'].toString()))).toList());
+                                                      ref.read(isSelectModeProvider.notifier).state = false;
+                                                      ref.read(selectedCardsIdsProvider.notifier).state = {};
+                                                    }
+                                                  },
                                                 ),
+                                                TextButton(
+                                                  onPressed: () {
+                                                    ref.read(isSelectModeProvider.notifier).state = false;
+                                                    ref.read(selectedCardsIdsProvider.notifier).state = {};
+                                                  },
+                                                  child: const Text('취소', style: TextStyle(color: SoseangTheme.textMuted)),
+                                                ),
+                                              ] else
+                                                TextButton.icon(
+                                                  icon: const Icon(Icons.checklist, size: 16),
+                                                  label: const Text('여러 개 선택'),
+                                                  onPressed: () {
+                                                    ref.read(isSelectModeProvider.notifier).state = true;
+                                                    ref.read(selectedCardsIdsProvider.notifier).state = {};
+                                                  },
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      if (filteredCards.isEmpty)
+                                        Center(
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 80),
+                                            child: Column(
+                                              children: [
+                                                Icon(cardStyle['icon'], size: 55, color: SoseangTheme.border),
+                                                const SizedBox(height: 10),
+                                                const Text('이 방은 현재 텅 비어있습니다.\n대기실에서 관련 사진을 저장해 보세요!', textAlign: TextAlign.center, style: TextStyle(color: SoseangTheme.textMuted, fontSize: 13)),
+                                              ],
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        ListView.builder(
+                                          shrinkWrap: true,
+                                          physics: const NeverScrollableScrollPhysics(),
+                                          itemCount: filteredCards.length,
+                                          itemBuilder: (context, index) {
+                                            final card = filteredCards[index];
+                                            return Card(
+                                              margin: const EdgeInsets.symmetric(vertical: 8),
+                                              elevation: 2,
+                                              color: SoseangTheme.warmWhite,
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(14),
+                                                side: BorderSide(color: cardStyle['bgColor'] ?? cardStyle['color'], width: 1.5),
                                               ),
-                                            ListTile(
-                                              onTap: () => _showCardDetail(context, card, cardStyle),
-                                              leading: CircleAvatar(
-                                                backgroundColor: (cardStyle['bgColor'] as Color?)?.withValues(alpha: 0.3) ?? cardStyle['color'].withValues(alpha: 0.15),
-                                                child: Icon(cardStyle['icon'], color: cardStyle['color'], size: 18),
-                                              ),
-                                              title: Text(card['title'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: SoseangTheme.textDark)),
-                                              subtitle: Column(
+                                              child: Column(
                                                 crossAxisAlignment: CrossAxisAlignment.start,
                                                 children: [
-                                                  if (card['extraInfo'].toString().isNotEmpty)
-                                                    Padding(
-                                                      padding: const EdgeInsets.only(top: 4, bottom: 4),
-                                                      child: Container(
-                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                        decoration: BoxDecoration(
-                                                          color: (cardStyle['bgColor'] as Color?)?.withValues(alpha: 0.3) ?? cardStyle['color'].withValues(alpha: 0.1),
-                                                          borderRadius: BorderRadius.circular(4),
-                                                        ),
-                                                        child: Text(card['extraInfo'], style: TextStyle(color: cardStyle['color'], fontSize: 10, fontWeight: FontWeight.bold)),
+                                                  if (card['imagePath'] != null)
+                                                    ClipRRect(
+                                                      borderRadius: const BorderRadius.only(topLeft: Radius.circular(14), topRight: Radius.circular(14)),
+                                                      child: Image.file(
+                                                        File(card['imagePath']),
+                                                        width: double.infinity,
+                                                        height: 150,
+                                                        fit: BoxFit.cover,
                                                       ),
                                                     ),
-                                                  Text(card['content'], maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, color: SoseangTheme.textMuted)),
+                                                  ListTile(
+                                                    onTap: () {
+                                                      if (isSelectMode) {
+                                                        final id = int.parse(card['id'].toString());
+                                                        final ids = Set<int>.from(selectedIds);
+                                                        if (ids.contains(id)) ids.remove(id); else ids.add(id);
+                                                        ref.read(selectedCardsIdsProvider.notifier).state = ids;
+                                                      } else {
+                                                        _showCardDetail(context, ref, card, cardStyle);
+                                                      }
+                                                    },
+                                                    leading: CircleAvatar(
+                                                      backgroundColor: (cardStyle['bgColor'] as Color?)?.withValues(alpha: 0.3) ?? cardStyle['color'].withValues(alpha: 0.15),
+                                                      child: Icon(cardStyle['icon'], color: cardStyle['color'], size: 18),
+                                                    ),
+                                                    title: Text(card['title'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: SoseangTheme.textDark)),
+                                                    subtitle: Column(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      children: [
+                                                        if (card['extraInfo'].toString().isNotEmpty)
+                                                          Padding(
+                                                            padding: const EdgeInsets.only(top: 4, bottom: 4),
+                                                            child: Container(
+                                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                              decoration: BoxDecoration(
+                                                                color: (cardStyle['bgColor'] as Color?)?.withValues(alpha: 0.3) ?? cardStyle['color'].withValues(alpha: 0.1),
+                                                                borderRadius: BorderRadius.circular(4),
+                                                              ),
+                                                              child: Text(card['extraInfo'], style: TextStyle(color: cardStyle['color'], fontSize: 10, fontWeight: FontWeight.bold)),
+                                                            ),
+                                                          ),
+                                                        Text(card['content'], maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, color: SoseangTheme.textMuted)),
+                                                      ],
+                                                    ),
+                                                    trailing: isSelectMode
+                                                        ? Checkbox(
+                                                            value: selectedIds.contains(int.parse(card['id'].toString())),
+                                                            onChanged: (val) {
+                                                              final id = int.parse(card['id'].toString());
+                                                              final ids = Set<int>.from(selectedIds);
+                                                              if (val == true) ids.add(id); else ids.remove(id);
+                                                              ref.read(selectedCardsIdsProvider.notifier).state = ids;
+                                                            },
+                                                          )
+                                                        : const Icon(Icons.arrow_forward_ios, size: 12, color: SoseangTheme.textMuted),
+                                                  ),
                                                 ],
                                               ),
-                                              trailing: Icon(Icons.arrow_forward_ios, size: 12, color: SoseangTheme.textMuted),
-                                            ),
-                                          ],
+                                            );
+                                          },
                                         ),
-                                      );
-                                    },
+                                    ],
                                   );
                                 },
                               ),
@@ -1621,7 +1916,13 @@ class DynamicFeaturesCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final fields = ref.watch(aiResponseFieldsProvider);
+    final pickedImages = ref.watch(pickedImagesProvider);
+    final activeIndex = ref.watch(activeImageIndexProvider);
+    if (pickedImages.isEmpty || activeIndex >= pickedImages.length) return const SizedBox.shrink();
+    
+    final activePath = pickedImages[activeIndex].path;
+    final draft = ref.watch(draftCacheProvider)[activePath];
+    final fields = draft?.aiFields;
     if (fields == null || fields.isEmpty) return const SizedBox();
 
     final Map<String, String> fieldLabels = {
@@ -1650,9 +1951,9 @@ class DynamicFeaturesCard extends ConsumerWidget {
     final hasItems = fields.containsKey('items') && fields['items'] is List && (fields['items'] as List).isNotEmpty;
     final List<dynamic> items = hasItems ? (fields['items'] as List) : [];
     final currentItemIndex = ref.watch(currentItemIndexProvider);
-    final activeIndex = currentItemIndex >= items.length ? 0 : currentItemIndex;
+    final currentIdx = currentItemIndex >= items.length ? 0 : currentItemIndex;
 
-    final activeFields = hasItems ? (items[activeIndex] as Map<String, dynamic>) : fields;
+    final activeFields = hasItems ? (items[currentIdx] as Map<String, dynamic>) : fields;
 
     // 핵심 필드 및 시스템 내부 키 제외
     final excludeKeys = {
@@ -1764,9 +2065,22 @@ class DynamicFeaturesCard extends ConsumerWidget {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(
-                            entry.value.toString(),
-                            style: const TextStyle(fontSize: 12, color: Colors.black87),
+                          child: TextFormField(
+                            key: ValueKey('${activeIndex}_${entry.key}'),
+                            initialValue: entry.value.toString(),
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(vertical: 4, horizontal: 0),
+                              border: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black12)),
+                            ),
+                            onChanged: (val) {
+                              if (hasItems) {
+                                items[activeIndex][entry.key] = val;
+                              } else {
+                                fields![entry.key] = val;
+                              }
+                            },
                           ),
                         ),
                       ],

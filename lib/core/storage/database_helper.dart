@@ -104,6 +104,21 @@ class DatabaseHelper {
     );
   }
 
+  // 3-1-b. Update (타입 변경 및 텍스트 수정한 경우 fields 업데이트)
+  Future<int> updateTypeAndFields(int id, String type, String fieldsJson) async {
+    final db = await instance.database;
+    return await db.update(
+      'screenshots',
+      {
+        'type': type,
+        'fields': fieldsJson,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   // 3-2. Update (사용자가 검토 후 승인한 경우 status 업데이트)
   Future<int> updateStatus(int id, String status) async {
     final db = await instance.database;
@@ -126,6 +141,17 @@ class DatabaseHelper {
       'screenshots',
       where: 'id = ?',
       whereArgs: [id],
+    );
+  }
+
+  // 4-b. Delete Multiple (다중 삭제)
+  Future<int> deleteMultipleScreenshots(List<int> ids) async {
+    if (ids.isEmpty) return 0;
+    final db = await instance.database;
+    return await db.delete(
+      'screenshots',
+      where: 'id IN (${List.filled(ids.length, '?').join(',')})',
+      whereArgs: ids,
     );
   }
 }
