@@ -65,7 +65,49 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppStorage.initDirectories();
   await onDeviceClassifier.initialize();
-  runApp(const ProviderScope(child: MyApp()));
+
+  // 앱 시작 시 로컬 DB에서 'CONFIRMED' 카드 모두 불러오기
+  final dbRows = await DatabaseHelper.instance.getScreenshotsByStatus('CONFIRMED');
+  final initialCards = dbRows.map((row) {
+    int categoryId = 3;
+    switch(row['type']) {
+      case 'SCHEDULE': categoryId = 0; break;
+      case 'PLACE': categoryId = 1; break;
+      case 'WISHLIST': categoryId = 2; break;
+    }
+    
+    String title = '제목 없음';
+    String content = row['fields'] ?? '';
+    String extraInfo = '';
+    int subCategoryId = 0;
+    
+    try {
+      if (row['fields'] != null && row['fields'].toString().startsWith('{')) {
+        final parsed = jsonDecode(row['fields']);
+        title = parsed['title'] ?? title;
+        content = parsed['content'] ?? content;
+        extraInfo = parsed['extraInfo'] ?? extraInfo;
+        subCategoryId = parsed['subCategoryId'] ?? 0;
+      }
+    } catch(e) {}
+
+    return {
+      'id': row['id'].toString(),
+      'categoryId': categoryId,
+      'subCategoryId': subCategoryId,
+      'title': title,
+      'content': content,
+      'extraInfo': extraInfo,
+      'imagePath': row['image_path'],
+    };
+  }).toList();
+
+  runApp(ProviderScope(
+    overrides: [
+      savedCardsProvider.overrideWith((ref) => initialCards.reversed.toList()),
+    ],
+    child: const MyApp()
+  ));
 }
 
 class OcrDraft {
@@ -719,7 +761,12 @@ class HomeScreen extends ConsumerWidget {
       final dbRow = {
         'type': indexToType[categoryId] ?? 'MEMO',
         'confidence': 1.0, // 사용자가 명시적으로 수정한 최종 승인이므로 1.0 부여
-        'fields': content, // 수정된 상세 텍스트 전체 저장
+        'fields': jsonEncode({
+          'title': title,
+          'content': content,
+          'extraInfo': extraInfo,
+          'subCategoryId': categoryId == 0 ? subCategoryId : 0,
+        }),
         'image_path': finalImagePath,
         'status': 'CONFIRMED' // 사용자 최종 승인 완료
       };
