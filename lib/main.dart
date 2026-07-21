@@ -7,12 +7,17 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'core/ml/on_device_text_classifier.dart';
 import 'core/storage/app_storage.dart';
+import 'core/storage/database_helper.dart';
 import 'core/utils/masking_helper.dart';
+
+final onDeviceClassifier = OnDeviceTextClassifier();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppStorage.initDirectories();
+  await onDeviceClassifier.initialize();
   runApp(const ProviderScope(child: MyApp()));
 }
 
@@ -151,67 +156,16 @@ class HomeScreen extends ConsumerWidget {
         final firstLine = recognizedText.text.split('\n').first.trim();
         ref.read(titleControllerProvider).text = firstLine.isNotEmpty ? firstLine : "새로운 소생 카드";
 
-        // 로컬 룰베이스 분류기로 카테고리 즉시 판정 (서버 전송 없음, 완전히 안전)
-        final String lowerText = recognizedText.text.toLowerCase();
+        // 온디바이스 AI 분류기 호출!
+        final aiResultType = onDeviceClassifier.classify(recognizedText.text);
         
-        int scheduleScore = 0;
-        int placeScore = 0;
-        int wishlistScore = 0;
-        int memoScore = 0;
-
-        // 1. SCHEDULE 키워드 점수화
-        final scheduleKeywords = [
-          '유효기간', '사용기한', '만료일', '까지', '예약', '구독', '결제일', '약속',
-          '오전', '오후', '내일', '모레', '이번주', '다음주', '출발', '도착', '탑승', 
-          '체크인', '마감', 'D-'
-        ];
-        for (var kw in scheduleKeywords) {
-          if (lowerText.contains(kw.toLowerCase())) scheduleScore += 2;
-        }
-        if (lowerText.contains('년') || lowerText.contains('월') || lowerText.contains('일')) scheduleScore += 1;
-        if (lowerText.contains('시') || lowerText.contains('분')) scheduleScore += 1;
-
-        // 2. PLACE 키워드 점수화
-        final placeKeywords = [
-          '맛집', '카페', '식당', '평점', '리뷰', '영업시간', '주소', '지도', 
-          '네이버지도', '카카오맵', '구글맵', '위치', '거리', '도보', '차량', '길찾기'
-        ];
-        for (var kw in placeKeywords) {
-          if (lowerText.contains(kw.toLowerCase())) placeScore += 2;
-        }
-        final addressSuffixes = ['역', '동', '길', '로', '구'];
-        for (var suffix in addressSuffixes) {
-          if (RegExp('$suffix\\b').hasMatch(lowerText) || RegExp('$suffix\\s').hasMatch(lowerText)) {
-            placeScore += 1;
-          }
-        }
-
-        // 3. WISHLIST 키워드 점수화
-        final wishlistKeywords = [
-          '원', '₩', '할인', '쿠팡', '네이버쇼핑', '장바구니', '사이즈', '배송', 
-          '무신사', '올리브영', '찜', '위시리스트', '품절', '재입고', '옵션', '할부', '적립', '포인트'
-        ];
-        for (var kw in wishlistKeywords) {
-          if (lowerText.contains(kw.toLowerCase())) wishlistScore += 2;
-        }
-
-        // 4. MEMO 키워드 점수화
-        final memoKeywords = [
-          '재료', '만드는 법', '조리', 'QR', '리디북스', '카카오페이지', '네이버시리즈', 
-          '웹소설', '체크리스트', '할 일', 'TODO', '메모', '참고', '기록', '출처', '제목', '챕터'
-        ];
-        for (var kw in memoKeywords) {
-          if (lowerText.contains(kw.toLowerCase())) memoScore += 2;
-        }
-
-        int finalCategory = 3; // 기본값 MEMO
-        int maxScore = 0;
-
-        // 동점인 경우 우선순위: SCHEDULE > PLACE > WISHLIST > MEMO
-        if (memoScore > maxScore) { maxScore = memoScore; finalCategory = 3; }
-        if (wishlistScore > maxScore) { maxScore = wishlistScore; finalCategory = 2; }
-        if (placeScore > maxScore) { maxScore = placeScore; finalCategory = 1; }
-        if (scheduleScore > maxScore) { maxScore = scheduleScore; finalCategory = 0; }
+        final typeToIndex = {
+          'SCHEDULE': 0,
+          'PLACE': 1,
+          'WISHLIST': 2,
+          'MEMO': 3,
+        };
+        int finalCategory = typeToIndex[aiResultType] ?? 3;
 
         final isIDCard = ['주민등록증', '운전면허증', '여권', 'passport', 'driver\'s license', 'driver’s license'].any((k) => lowerText.contains(k)) ||
                          lowerText.contains('<<<<') ||
@@ -426,67 +380,16 @@ class HomeScreen extends ConsumerWidget {
         throw Exception('서버 응답 비정상');
       }
     } catch (e) {
-      print('⚠️ AI 로컬 서버 통신 실패 ($e). 스마트 로컬 룰베이스 분류기로 폴백합니다.');
-      final String lowerText = maskedText.toLowerCase();
+      print('⚠️ AI 로컬 서버 통신 실패 ($e). 온디바이스 AI 분류기로 폴백합니다.');
       
-      int scheduleScore = 0;
-      int placeScore = 0;
-      int wishlistScore = 0;
-      int memoScore = 0;
-
-      // 1. SCHEDULE 키워드 점수화
-      final scheduleKeywords = [
-        '유효기간', '사용기한', '만료일', '까지', '예약', '구독', '결제일', '약속',
-        '오전', '오후', '내일', '모레', '이번주', '다음주', '출발', '도착', '탑승', 
-        '체크인', '마감', 'D-'
-      ];
-      for (var kw in scheduleKeywords) {
-        if (lowerText.contains(kw.toLowerCase())) scheduleScore += 2;
-      }
-      if (lowerText.contains('년') || lowerText.contains('월') || lowerText.contains('일')) scheduleScore += 1;
-      if (lowerText.contains('시') || lowerText.contains('분')) scheduleScore += 1;
-
-      // 2. PLACE 키워드 점수화
-      final placeKeywords = [
-        '맛집', '카페', '식당', '평점', '리뷰', '영업시간', '주소', '지도', 
-        '네이버지도', '카카오맵', '구글맵', '위치', '거리', '도보', '차량', '길찾기'
-      ];
-      for (var kw in placeKeywords) {
-        if (lowerText.contains(kw.toLowerCase())) placeScore += 2;
-      }
-      final addressSuffixes = ['역', '동', '길', '로', '구'];
-      for (var suffix in addressSuffixes) {
-        if (RegExp('$suffix\\b').hasMatch(lowerText) || RegExp('$suffix\\s').hasMatch(lowerText)) {
-          placeScore += 1;
-        }
-      }
-
-      // 3. WISHLIST 키워드 점수화
-      final wishlistKeywords = [
-        '원', '₩', '할인', '쿠팡', '네이버쇼핑', '장바구니', '사이즈', '배송', 
-        '무신사', '올리브영', '찜', '위시리스트', '품절', '재입고', '옵션', '할부', '적립', '포인트'
-      ];
-      for (var kw in wishlistKeywords) {
-        if (lowerText.contains(kw.toLowerCase())) wishlistScore += 2;
-      }
-
-      // 4. MEMO 키워드 점수화
-      final memoKeywords = [
-        '재료', '만드는 법', '조리', 'QR', '리디북스', '카카오페이지', '네이버시리즈', 
-        '웹소설', '체크리스트', '할 일', 'TODO', '메모', '참고', '기록', '출처', '제목', '챕터'
-      ];
-      for (var kw in memoKeywords) {
-        if (lowerText.contains(kw.toLowerCase())) memoScore += 2;
-      }
-
-      int finalCategory = 3; // 기본값 MEMO
-      int maxScore = 0;
-
-      // 동점인 경우 우선순위: SCHEDULE > PLACE > WISHLIST > MEMO
-      if (memoScore > maxScore) { maxScore = memoScore; finalCategory = 3; }
-      if (wishlistScore > maxScore) { maxScore = wishlistScore; finalCategory = 2; }
-      if (placeScore > maxScore) { maxScore = placeScore; finalCategory = 1; }
-      if (scheduleScore > maxScore) { maxScore = scheduleScore; finalCategory = 0; }
+      final aiResultType = onDeviceClassifier.classify(maskedText);
+      final typeToIndex = {
+        'SCHEDULE': 0,
+        'PLACE': 1,
+        'WISHLIST': 2,
+        'MEMO': 3,
+      };
+      int finalCategory = typeToIndex[aiResultType] ?? 3;
 
       final isIDCard = ['주민등록증', '운전면허증', '여권', 'passport', 'driver\'s license', 'driver’s license'].any((k) => lowerText.contains(k)) ||
                        lowerText.contains('<<<<') ||
@@ -516,7 +419,7 @@ class HomeScreen extends ConsumerWidget {
   }
 
   // 수정본 보관함 최종 저장 분기 로직
-  void _saveCurrentCardAndRemoveFromQueue(BuildContext context, WidgetRef ref) {
+  Future<void> _saveCurrentCardAndRemoveFromQueue(BuildContext context, WidgetRef ref) async {
     final title = ref.read(titleControllerProvider).text;
     final content = ref.read(contentControllerProvider).text;
     final categoryId = ref.read(selectedCategoryProvider);
@@ -539,6 +442,7 @@ class HomeScreen extends ConsumerWidget {
       finalImagePath = images[activeIndex].path;
     }
 
+    // 1. 기존 메모리 뷰어용 상태 업데이트
     final newCard = {
       'id': DateTime.now().toString(),
       'categoryId': categoryId,
@@ -551,10 +455,35 @@ class HomeScreen extends ConsumerWidget {
 
     ref.read(savedCardsProvider.notifier).update((state) => [newCard, ...state]);
 
+    // 2. 🚀 [새로 추가된 로컬 DB 영구 저장 로직]
+    try {
+      final indexToType = {
+        0: 'SCHEDULE',
+        1: 'PLACE',
+        2: 'WISHLIST',
+        3: 'MEMO',
+      };
+      
+      final dbRow = {
+        'type': indexToType[categoryId] ?? 'MEMO',
+        'confidence': 1.0, // 사용자가 명시적으로 수정한 최종 승인이므로 1.0 부여
+        'fields': content, // 수정된 상세 텍스트 전체 저장
+        'image_path': finalImagePath,
+        'status': 'CONFIRMED' // 사용자 최종 승인 완료
+      };
+      
+      final dbId = await DatabaseHelper.instance.insertScreenshot(dbRow);
+      print('✅ [로컬 DB 저장 완료] 고유 ID: $dbId, 타입: ${dbRow['type']}');
+    } catch (e) {
+      print('❌ [로컬 DB 저장 실패] $e');
+    }
+
     final updatedImages = List<XFile>.from(images)..removeAt(activeIndex);
     ref.read(pickedImagesProvider.notifier).state = updatedImages;
 
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('💾 지정된 보관함 방으로 안전하게 입고되었습니다!')));
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('💾 지정된 보관함 방으로 입고 및 로컬 DB에 안전하게 영구 저장되었습니다!')));
+    }
 
     ref.read(ocrStatusProvider.notifier).state = 'idle';
     _clearAllFields(ref);

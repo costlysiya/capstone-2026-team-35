@@ -42,6 +42,10 @@ dependencies:
   image_picker: ^1.2.3
   google_mlkit_text_recognition: ^0.15.1
   image_cropper: ^12.2.1
+  sqflite: ^2.3.0
+  path: ^1.9.0
+  sqflite_common_ffi: ^2.4.2
+  tflite_flutter: ^0.12.1
 
 dev_dependencies:
   flutter_test:
@@ -68,9 +72,11 @@ flutter:
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  assets:
+    - assets/classifier_demo.tflite
+    - assets/vocab.json
+    - assets/idf.json
+    - assets/label_map.json
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
