@@ -1754,16 +1754,6 @@ class HomeScreen extends ConsumerWidget {
                                               child: Column(
                                                 crossAxisAlignment: CrossAxisAlignment.start,
                                                 children: [
-                                                  if (card['imagePath'] != null)
-                                                    ClipRRect(
-                                                      borderRadius: const BorderRadius.only(topLeft: Radius.circular(14), topRight: Radius.circular(14)),
-                                                      child: Image.file(
-                                                        File(card['imagePath']),
-                                                        width: double.infinity,
-                                                        height: 150,
-                                                        fit: BoxFit.cover,
-                                                      ),
-                                                    ),
                                                   ListTile(
                                                     onTap: () {
                                                       if (isSelectMode) {
@@ -1798,8 +1788,23 @@ class HomeScreen extends ConsumerWidget {
                                                         Text(card['content'], maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, color: SoseangTheme.textMuted)),
                                                       ],
                                                     ),
-                                                    trailing: isSelectMode
-                                                        ? Checkbox(
+                                                    trailing: Row(
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        if (card['imagePath'] != null) ...[
+                                                          ClipRRect(
+                                                            borderRadius: BorderRadius.circular(8),
+                                                            child: Image.file(
+                                                              File(card['imagePath']),
+                                                              width: 48,
+                                                              height: 48,
+                                                              fit: BoxFit.cover,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(width: 8),
+                                                        ],
+                                                        if (isSelectMode)
+                                                          Checkbox(
                                                             value: selectedIds.contains(int.tryParse(card['id'].toString()) ?? -1),
                                                             onChanged: (val) {
                                                               final id = int.tryParse(card['id'].toString()) ?? -1;
@@ -1808,7 +1813,10 @@ class HomeScreen extends ConsumerWidget {
                                                               ref.read(selectedCardsIdsProvider.notifier).state = ids;
                                                             },
                                                           )
-                                                        : const Icon(Icons.arrow_forward_ios, size: 12, color: SoseangTheme.textMuted),
+                                                        else
+                                                          const Icon(Icons.arrow_forward_ios, size: 12, color: SoseangTheme.textMuted),
+                                                      ],
+                                                    ),
                                                   ),
                                                 ],
                                               ),
