@@ -1623,27 +1623,107 @@ class HomeScreen extends ConsumerWidget {
                           )
                         : Column(
                             children: [
-                              if (currentMenu.startsWith('cat_0'))
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 12),
-                                  child: Row(
-                                    children: [
-                                      ChoiceChip(
-                                        label: const Text('🗓️ 일반 일정', style: TextStyle(fontSize: 12)),
-                                        selected: currentMenu == 'cat_0_0' || currentMenu == 'cat_0',
-                                        selectedColor: SoseangTheme.scheduleColor,
-                                        onSelected: (_) => ref.read(currentMenuProvider.notifier).state = 'cat_0_0',
-                                      ),
-                                      const SizedBox(width: 8),
-                                      ChoiceChip(
-                                        label: const Text('🎟️ 기프티콘', style: TextStyle(fontSize: 12)),
-                                        selected: currentMenu == 'cat_0_1',
-                                        selectedColor: SoseangTheme.gifticonColor,
-                                        onSelected: (_) => ref.read(currentMenuProvider.notifier).state = 'cat_0_1',
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                              Builder(
+                                builder: (context) {
+                                  List<String> menuParts = currentMenu.split('_');
+                                  int targetCatId = int.parse(menuParts[1]);
+                                  int? targetSubCatId = menuParts.length > 2 ? int.parse(menuParts[2]) : null;
+
+                                  final filteredCards = savedCards.where((c) {
+                                    if (targetSubCatId != null) {
+                                      return c['categoryId'] == targetCatId && c['subCategoryId'] == targetSubCatId;
+                                    }
+                                    return c['categoryId'] == targetCatId;
+                                  }).toList();
+
+                                  final isSelectMode = ref.watch(isSelectModeProvider);
+                                  final selectedIds = ref.watch(selectedCardsIdsProvider);
+
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: Row(
+                                      children: [
+                                        if (currentMenu.startsWith('cat_0')) ...[
+                                          ChoiceChip(
+                                            label: const Text('🗓️ 일반 일정', style: TextStyle(fontSize: 12)),
+                                            selected: currentMenu == 'cat_0_0' || currentMenu == 'cat_0',
+                                            selectedColor: SoseangTheme.scheduleColor,
+                                            onSelected: (_) => ref.read(currentMenuProvider.notifier).state = 'cat_0_0',
+                                            visualDensity: VisualDensity.compact,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          ChoiceChip(
+                                            label: const Text('🎟️ 기프티콘', style: TextStyle(fontSize: 12)),
+                                            selected: currentMenu == 'cat_0_1',
+                                            selectedColor: SoseangTheme.gifticonColor,
+                                            onSelected: (_) => ref.read(currentMenuProvider.notifier).state = 'cat_0_1',
+                                            visualDensity: VisualDensity.compact,
+                                          ),
+                                        ],
+                                        const Spacer(),
+                                        if (filteredCards.isNotEmpty)
+                                          if (isSelectMode) ...[
+                                            TextButton(
+                                              onPressed: () {
+                                                if (selectedIds.length == filteredCards.length && filteredCards.isNotEmpty) {
+                                                  ref.read(selectedCardsIdsProvider.notifier).state = {};
+                                                } else {
+                                                  final allIds = filteredCards.map((c) => int.tryParse(c['id'].toString()) ?? -1).where((id) => id != -1).toSet();
+                                                  ref.read(selectedCardsIdsProvider.notifier).state = allIds;
+                                                }
+                                              },
+                                              style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 4), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                                              child: Text(selectedIds.length == filteredCards.length && filteredCards.isNotEmpty ? '전체 해제' : '전체 선택', style: const TextStyle(fontSize: 12)),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            TextButton.icon(
+                                              icon: const Icon(Icons.delete, color: Colors.red, size: 14),
+                                              label: Text('삭제 (${selectedIds.length})', style: const TextStyle(color: Colors.red, fontSize: 12)),
+                                              style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 4), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                                              onPressed: selectedIds.isEmpty ? null : () async {
+                                                final confirm = await showDialog<bool>(
+                                                  context: context,
+                                                  builder: (ctx) => AlertDialog(
+                                                    title: const Text('선택 삭제'),
+                                                    content: Text('${selectedIds.length}개의 항목을 삭제하시겠습니까?'),
+                                                    actions: [
+                                                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
+                                                      TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('삭제', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
+                                                    ],
+                                                  ),
+                                                );
+                                                if (confirm == true) {
+                                                  await DatabaseHelper.instance.deleteMultipleScreenshots(selectedIds.toList());
+                                                  ref.read(savedCardsProvider.notifier).update((state) => state.where((c) => !selectedIds.contains(int.tryParse(c['id'].toString()) ?? -1)).toList());
+                                                  ref.read(isSelectModeProvider.notifier).state = false;
+                                                  ref.read(selectedCardsIdsProvider.notifier).state = {};
+                                                }
+                                              },
+                                            ),
+                                            const SizedBox(width: 4),
+                                            TextButton(
+                                              onPressed: () {
+                                                ref.read(isSelectModeProvider.notifier).state = false;
+                                                ref.read(selectedCardsIdsProvider.notifier).state = {};
+                                              },
+                                              style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 4), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                                              child: const Text('취소', style: TextStyle(color: SoseangTheme.textMuted, fontSize: 12)),
+                                            ),
+                                          ] else
+                                            TextButton.icon(
+                                              icon: const Icon(Icons.checklist, size: 14),
+                                              label: const Text('선택', style: TextStyle(fontSize: 12)),
+                                              style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 4), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                                              onPressed: () {
+                                                ref.read(isSelectModeProvider.notifier).state = true;
+                                                ref.read(selectedCardsIdsProvider.notifier).state = {};
+                                              },
+                                            ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
                               NavigatorBuilder(
                                 builder: (context) {
                                   List<String> menuParts = currentMenu.split('_');
@@ -1663,66 +1743,6 @@ class HomeScreen extends ConsumerWidget {
 
                                   return Column(
                                     children: [
-                                      if (filteredCards.isNotEmpty)
-                                        Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                                          child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.end,
-                                            children: [
-                                              if (isSelectMode) ...[
-                                                TextButton(
-                                                  onPressed: () {
-                                                    if (selectedIds.length == filteredCards.length && filteredCards.isNotEmpty) {
-                                                      ref.read(selectedCardsIdsProvider.notifier).state = {};
-                                                    } else {
-                                                      final allIds = filteredCards.map((c) => int.tryParse(c['id'].toString()) ?? -1).where((id) => id != -1).toSet();
-                                                      ref.read(selectedCardsIdsProvider.notifier).state = allIds;
-                                                    }
-                                                  },
-                                                  child: Text(selectedIds.length == filteredCards.length && filteredCards.isNotEmpty ? '전체 해제' : '전체 선택'),
-                                                ),
-                                                TextButton.icon(
-                                                  icon: const Icon(Icons.delete, color: Colors.red, size: 16),
-                                                  label: Text('선택 삭제 (${selectedIds.length})', style: const TextStyle(color: Colors.red)),
-                                                  onPressed: selectedIds.isEmpty ? null : () async {
-                                                    final confirm = await showDialog<bool>(
-                                                      context: context,
-                                                      builder: (ctx) => AlertDialog(
-                                                        title: const Text('선택 삭제'),
-                                                        content: Text('${selectedIds.length}개의 항목을 삭제하시겠습니까?'),
-                                                        actions: [
-                                                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
-                                                          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('삭제', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
-                                                        ],
-                                                      ),
-                                                    );
-                                                    if (confirm == true) {
-                                                      await DatabaseHelper.instance.deleteMultipleScreenshots(selectedIds.toList());
-                                                      ref.read(savedCardsProvider.notifier).update((state) => state.where((c) => !selectedIds.contains(int.tryParse(c['id'].toString()) ?? -1)).toList());
-                                                      ref.read(isSelectModeProvider.notifier).state = false;
-                                                      ref.read(selectedCardsIdsProvider.notifier).state = {};
-                                                    }
-                                                  },
-                                                ),
-                                                TextButton(
-                                                  onPressed: () {
-                                                    ref.read(isSelectModeProvider.notifier).state = false;
-                                                    ref.read(selectedCardsIdsProvider.notifier).state = {};
-                                                  },
-                                                  child: const Text('취소', style: TextStyle(color: SoseangTheme.textMuted)),
-                                                ),
-                                              ] else
-                                                TextButton.icon(
-                                                  icon: const Icon(Icons.checklist, size: 16),
-                                                  label: const Text('여러 개 선택'),
-                                                  onPressed: () {
-                                                    ref.read(isSelectModeProvider.notifier).state = true;
-                                                    ref.read(selectedCardsIdsProvider.notifier).state = {};
-                                                  },
-                                                ),
-                                            ],
-                                          ),
-                                        ),
                                       if (filteredCards.isEmpty)
                                         Center(
                                           child: Padding(
