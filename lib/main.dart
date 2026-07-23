@@ -1540,10 +1540,23 @@ class HomeScreen extends ConsumerWidget {
                                           if (selectedCategory == 0) ...[
                                             TextField(
                                               controller: scheduleDateController,
+                                              readOnly: true,
+                                              onTap: () async {
+                                                DateTime? pickedDate = await showDatePicker(
+                                                  context: context,
+                                                  initialDate: DateTime.now(),
+                                                  firstDate: DateTime(2000),
+                                                  lastDate: DateTime(2101),
+                                                );
+                                                if (pickedDate != null) {
+                                                  String formattedDate = "\${pickedDate.year}.\${pickedDate.month.toString().padLeft(2, '0')}.\${pickedDate.day.toString().padLeft(2, '0')}";
+                                                  scheduleDateController.text = formattedDate;
+                                                }
+                                              },
                                               decoration: InputDecoration(
-                                                labelText: selectedSubCategory == 1 ? '⏰ 기프티콘 유효기간 입력' : '⏰ 일정 일시 입력', 
+                                                labelText: selectedSubCategory == 1 ? '⏰ 기프티콘 유효기간 선택' : '⏰ 일정 날짜 선택', 
                                                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), 
-                                                prefixIcon: Icon(Icons.access_time, color: SoseangTheme.scheduleDark),
+                                                prefixIcon: Icon(Icons.calendar_today, color: SoseangTheme.scheduleDark),
                                                 fillColor: SoseangTheme.ivory,
                                                 filled: true,
                                               ),
