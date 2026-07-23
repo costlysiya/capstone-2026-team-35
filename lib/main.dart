@@ -1670,6 +1670,17 @@ class HomeScreen extends ConsumerWidget {
                                             mainAxisAlignment: MainAxisAlignment.end,
                                             children: [
                                               if (isSelectMode) ...[
+                                                TextButton(
+                                                  onPressed: () {
+                                                    if (selectedIds.length == filteredCards.length && filteredCards.isNotEmpty) {
+                                                      ref.read(selectedCardsIdsProvider.notifier).state = {};
+                                                    } else {
+                                                      final allIds = filteredCards.map((c) => int.tryParse(c['id'].toString()) ?? -1).where((id) => id != -1).toSet();
+                                                      ref.read(selectedCardsIdsProvider.notifier).state = allIds;
+                                                    }
+                                                  },
+                                                  child: Text(selectedIds.length == filteredCards.length && filteredCards.isNotEmpty ? '전체 해제' : '전체 선택'),
+                                                ),
                                                 TextButton.icon(
                                                   icon: const Icon(Icons.delete, color: Colors.red, size: 16),
                                                   label: Text('선택 삭제 (${selectedIds.length})', style: const TextStyle(color: Colors.red)),
