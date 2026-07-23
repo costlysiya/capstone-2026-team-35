@@ -2000,10 +2000,10 @@ class DynamicFeaturesCard extends ConsumerWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   ElevatedButton.icon(
-                    onPressed: activeIndex > 0
+                    onPressed: currentIdx > 0
                         ? () {
-                            ref.read(currentItemIndexProvider.notifier).state = activeIndex - 1;
-                            _updateActiveItemControllers(ref, items[activeIndex - 1], ref.read(selectedCategoryProvider));
+                            ref.read(currentItemIndexProvider.notifier).state = currentIdx - 1;
+                            _updateActiveItemControllers(ref, items[currentIdx - 1], ref.read(selectedCategoryProvider));
                           }
                         : null,
                     icon: const Icon(Icons.arrow_left, size: 16),
@@ -2015,13 +2015,13 @@ class DynamicFeaturesCard extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(width: 15),
-                  Text('${activeIndex + 1} / ${items.length}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  Text('${currentIdx + 1} / ${items.length}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                   const SizedBox(width: 15),
                   ElevatedButton.icon(
-                    onPressed: activeIndex < items.length - 1
+                    onPressed: currentIdx < items.length - 1
                         ? () {
-                            ref.read(currentItemIndexProvider.notifier).state = activeIndex + 1;
-                            _updateActiveItemControllers(ref, items[activeIndex + 1], ref.read(selectedCategoryProvider));
+                            ref.read(currentItemIndexProvider.notifier).state = currentIdx + 1;
+                            _updateActiveItemControllers(ref, items[currentIdx + 1], ref.read(selectedCategoryProvider));
                           }
                         : null,
                     icon: const Icon(Icons.arrow_right, size: 16),
@@ -2066,7 +2066,7 @@ class DynamicFeaturesCard extends ConsumerWidget {
                         const SizedBox(width: 8),
                         Expanded(
                           child: TextFormField(
-                            key: ValueKey('${activeIndex}_${entry.key}'),
+                            key: ValueKey('${currentIdx}_${entry.key}'),
                             initialValue: entry.value.toString(),
                             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
                             decoration: const InputDecoration(
@@ -2076,7 +2076,7 @@ class DynamicFeaturesCard extends ConsumerWidget {
                             ),
                             onChanged: (val) {
                               if (hasItems) {
-                                items[activeIndex][entry.key] = val;
+                                items[currentIdx][entry.key] = val;
                               } else {
                                 fields![entry.key] = val;
                               }
