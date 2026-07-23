@@ -1825,45 +1825,30 @@ class HomeScreen extends ConsumerWidget {
                                                       child: Icon(cardStyle['icon'], color: cardStyle['color'], size: 18),
                                                     ),
                                                     title: Text(card['title'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: SoseangTheme.textDark)),
-                                                    subtitle: card['categoryId'] == 0
-                                                        ? (card['extraInfo'].toString().isNotEmpty
-                                                            ? Padding(
-                                                                padding: const EdgeInsets.only(top: 6, bottom: 2),
-                                                                child: Row(
-                                                                  children: [
-                                                                    Icon(Icons.calendar_today, size: 14, color: cardStyle['color']),
-                                                                    const SizedBox(width: 4),
-                                                                    Expanded(
-                                                                      child: Text(
-                                                                        card['extraInfo'],
-                                                                        style: TextStyle(color: cardStyle['color'], fontSize: 13, fontWeight: FontWeight.w600),
-                                                                        maxLines: 1,
-                                                                        overflow: TextOverflow.ellipsis,
-                                                                      ),
-                                                                    ),
-                                                                  ],
-                                                                ),
-                                                              )
-                                                            : const SizedBox.shrink())
-                                                        : Column(
-                                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                                            children: [
-                                                              if (card['extraInfo'].toString().isNotEmpty)
-                                                                Padding(
-                                                                  padding: const EdgeInsets.only(top: 4, bottom: 4),
-                                                                  child: Container(
-                                                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                                    decoration: BoxDecoration(
-                                                                      color: (cardStyle['bgColor'] as Color?)?.withValues(alpha: 0.3) ?? cardStyle['color'].withValues(alpha: 0.1),
-                                                                      borderRadius: BorderRadius.circular(4),
-                                                                    ),
-                                                                    child: Text(card['extraInfo'], style: TextStyle(color: cardStyle['color'], fontSize: 10, fontWeight: FontWeight.bold)),
+                                                    subtitle: card['extraInfo'].toString().isNotEmpty
+                                                        ? Padding(
+                                                            padding: const EdgeInsets.only(top: 6, bottom: 2),
+                                                            child: Row(
+                                                              children: [
+                                                                if (card['categoryId'] == 0) ...[
+                                                                  Icon(Icons.calendar_today, size: 14, color: cardStyle['color']),
+                                                                  const SizedBox(width: 4),
+                                                                ] else if (card['categoryId'] == 1) ...[
+                                                                  Icon(Icons.pin_drop, size: 14, color: cardStyle['color']),
+                                                                  const SizedBox(width: 4),
+                                                                ],
+                                                                Expanded(
+                                                                  child: Text(
+                                                                    card['extraInfo'],
+                                                                    style: TextStyle(color: cardStyle['color'], fontSize: 13, fontWeight: FontWeight.w600),
+                                                                    maxLines: 1,
+                                                                    overflow: TextOverflow.ellipsis,
                                                                   ),
                                                                 ),
-                                                              if (card['content'].toString().isNotEmpty)
-                                                                Text(card['content'], maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, color: SoseangTheme.textMuted)),
-                                                            ],
-                                                          ),
+                                                              ],
+                                                            ),
+                                                          )
+                                                        : const SizedBox.shrink(),
                                                     trailing: Row(
                                                       mainAxisSize: MainAxisSize.min,
                                                       children: [
