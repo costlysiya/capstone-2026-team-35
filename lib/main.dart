@@ -812,20 +812,8 @@ class HomeScreen extends ConsumerWidget {
       finalImagePath = images[activeIndex].path;
     }
 
-    // 1. 기존 메모리 뷰어용 상태 업데이트
-    final newCard = {
-      'id': DateTime.now().toString(),
-      'categoryId': categoryId,
-      'subCategoryId': categoryId == 0 ? subCategoryId : 0, 
-      'title': title,
-      'content': content,
-      'extraInfo': extraInfo,
-      'imagePath': finalImagePath, 
-    };
-
-    ref.read(savedCardsProvider.notifier).update((state) => [newCard, ...state]);
-
-    // 2. 🚀 [새로 추가된 로컬 DB 영구 저장 로직]
+    // 1. 🚀 [새로 추가된 로컬 DB 영구 저장 로직]
+    int? dbId;
     try {
       final indexToType = {
         0: 'SCHEDULE',
@@ -852,11 +840,24 @@ class HomeScreen extends ConsumerWidget {
         'status': 'CONFIRMED' // 사용자 최종 승인 완료
       };
       
-      final dbId = await DatabaseHelper.instance.insertScreenshot(dbRow);
+      dbId = await DatabaseHelper.instance.insertScreenshot(dbRow);
       print('✅ [로컬 DB 저장 완료] 고유 ID: $dbId, 타입: ${dbRow['type']}');
     } catch (e) {
       print('❌ [로컬 DB 저장 실패] $e');
     }
+
+    // 2. 기존 메모리 뷰어용 상태 업데이트
+    final newCard = {
+      'id': dbId?.toString() ?? DateTime.now().toString(),
+      'categoryId': categoryId,
+      'subCategoryId': categoryId == 0 ? subCategoryId : 0, 
+      'title': title,
+      'content': content,
+      'extraInfo': extraInfo,
+      'imagePath': finalImagePath, 
+    };
+
+    ref.read(savedCardsProvider.notifier).update((state) => [newCard, ...state]);
 
     final updatedImages = List<XFile>.from(images)..removeAt(activeIndex);
     ref.read(pickedImagesProvider.notifier).state = updatedImages;
@@ -1083,7 +1084,7 @@ class HomeScreen extends ConsumerWidget {
                                               });
                                               final typeStr = const ['SCHEDULE', 'PLACE', 'WISHLIST', 'MEMO'][editCatId];
                                               
-                                              await DatabaseHelper.instance.updateTypeAndFields(int.parse(card['id']), typeStr, newFields);
+                                              await DatabaseHelper.instance.updateTypeAndFields(int.tryParse(card['id'].toString()) ?? -1, typeStr, newFields);
                                               
                                               ref.read(savedCardsProvider.notifier).update((state) {
                                                 return state.map((c) {
@@ -1138,7 +1139,7 @@ class HomeScreen extends ConsumerWidget {
                                   ),
                                 );
                                 if (confirm == true) {
-                                  await DatabaseHelper.instance.deleteScreenshot(int.parse(card['id']));
+                                  await DatabaseHelper.instance.deleteScreenshot(int.tryParse(card['id'].toString()) ?? -1);
                                   ref.read(savedCardsProvider.notifier).update((state) => state.where((c) => c['id'] != card['id']).toList());
                                   if (context.mounted) Navigator.pop(context);
                                 }
@@ -1686,7 +1687,7 @@ class HomeScreen extends ConsumerWidget {
                                                     );
                                                     if (confirm == true) {
                                                       await DatabaseHelper.instance.deleteMultipleScreenshots(selectedIds.toList());
-                                                      ref.read(savedCardsProvider.notifier).update((state) => state.where((c) => !selectedIds.contains(int.parse(c['id'].toString()))).toList());
+                                                      ref.read(savedCardsProvider.notifier).update((state) => state.where((c) => !selectedIds.contains(int.tryParse(c['id'].toString()) ?? -1)).toList());
                                                       ref.read(isSelectModeProvider.notifier).state = false;
                                                       ref.read(selectedCardsIdsProvider.notifier).state = {};
                                                     }
@@ -1755,7 +1756,7 @@ class HomeScreen extends ConsumerWidget {
                                                   ListTile(
                                                     onTap: () {
                                                       if (isSelectMode) {
-                                                        final id = int.parse(card['id'].toString());
+                                                        final id = int.tryParse(card['id'].toString()) ?? -1;
                                                         final ids = Set<int>.from(selectedIds);
                                                         if (ids.contains(id)) ids.remove(id); else ids.add(id);
                                                         ref.read(selectedCardsIdsProvider.notifier).state = ids;
@@ -1788,9 +1789,9 @@ class HomeScreen extends ConsumerWidget {
                                                     ),
                                                     trailing: isSelectMode
                                                         ? Checkbox(
-                                                            value: selectedIds.contains(int.parse(card['id'].toString())),
+                                                            value: selectedIds.contains(int.tryParse(card['id'].toString()) ?? -1),
                                                             onChanged: (val) {
-                                                              final id = int.parse(card['id'].toString());
+                                                              final id = int.tryParse(card['id'].toString()) ?? -1;
                                                               final ids = Set<int>.from(selectedIds);
                                                               if (val == true) ids.add(id); else ids.remove(id);
                                                               ref.read(selectedCardsIdsProvider.notifier).state = ids;
