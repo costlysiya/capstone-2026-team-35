@@ -1064,7 +1064,29 @@ class HomeScreen extends ConsumerWidget {
                                                 const SizedBox(height: 10),
                                                 TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: '제목')),
                                                 const SizedBox(height: 10),
-                                                TextField(controller: extraCtrl, decoration: const InputDecoration(labelText: '추가 정보')),
+                                                if (editCatId == 0)
+                                                  TextField(
+                                                    controller: extraCtrl,
+                                                    readOnly: true,
+                                                    onTap: () async {
+                                                      DateTime? pickedDate = await showDatePicker(
+                                                        context: context,
+                                                        initialDate: DateTime.now(),
+                                                        firstDate: DateTime(2000),
+                                                        lastDate: DateTime(2101),
+                                                      );
+                                                      if (pickedDate != null) {
+                                                        String formattedDate = "${pickedDate.year}/${pickedDate.month.toString().padLeft(2, '0')}/${pickedDate.day.toString().padLeft(2, '0')}";
+                                                        extraCtrl.text = formattedDate;
+                                                      }
+                                                    },
+                                                    decoration: InputDecoration(
+                                                      labelText: card['subCategoryId'] == 1 ? '기프티콘 유효기간' : '일정 일시',
+                                                      prefixIcon: const Icon(Icons.calendar_today),
+                                                    ),
+                                                  )
+                                                else
+                                                  TextField(controller: extraCtrl, decoration: const InputDecoration(labelText: '추가 정보')),
                                                 const SizedBox(height: 10),
                                                 TextField(controller: contentCtrl, maxLines: 5, decoration: const InputDecoration(labelText: '추출 본문')),
                                               ],
