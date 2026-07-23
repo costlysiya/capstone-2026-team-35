@@ -1549,7 +1549,7 @@ class HomeScreen extends ConsumerWidget {
                                                   lastDate: DateTime(2101),
                                                 );
                                                 if (pickedDate != null) {
-                                                  String formattedDate = "\${pickedDate.year}.\${pickedDate.month.toString().padLeft(2, '0')}.\${pickedDate.day.toString().padLeft(2, '0')}";
+                                                  String formattedDate = "${pickedDate.year}/${pickedDate.month.toString().padLeft(2, '0')}/${pickedDate.day.toString().padLeft(2, '0')}";
                                                   scheduleDateController.text = formattedDate;
                                                 }
                                               },
