@@ -1673,14 +1673,10 @@ class HomeScreen extends ConsumerWidget {
                                   final focusedDay = ref.watch(focusedDayProvider);
 
                                   final filteredCards = savedCards.where((c) {
-                                    if (targetSubCatId != null) {
-                                      if (c['categoryId'] != targetCatId || c['subCategoryId'] != targetSubCatId) return false;
-                                    } else {
-                                      if (c['categoryId'] != targetCatId) return false;
-                                    }
-
-                                    // B방식: 캘린더 날짜 필터링 (일정, 기프티콘일 때만)
+                                    // 캘린더 날짜 필터링 (선택된 날짜가 있을 때: 일반일정/기프티콘 통합)
                                     if (currentMenu.startsWith('cat_0') && selectedDay != null) {
+                                      if (c['categoryId'] != targetCatId) return false;
+                                      
                                       String cardDateStr = c['extraInfo'] ?? '';
                                       if (cardDateStr.isNotEmpty) {
                                         bool match = false;
@@ -1697,8 +1693,16 @@ class HomeScreen extends ConsumerWidget {
                                         }
                                         if (!match) return false;
                                       } else {
-                                        return false; // 날짜 정보 없으면 달력 특정일 선택 시 숨김
+                                        return false; // 날짜 정보 없으면 숨김
                                       }
+                                      return true; // 여기서 true로 바로 반환 (서브카테고리 무시)
+                                    }
+
+                                    // 날짜 미선택 시 평소 필터링
+                                    if (targetSubCatId != null) {
+                                      if (c['categoryId'] != targetCatId || c['subCategoryId'] != targetSubCatId) return false;
+                                    } else {
+                                      if (c['categoryId'] != targetCatId) return false;
                                     }
                                     return true;
                                   }).toList();
@@ -1777,21 +1781,28 @@ class HomeScreen extends ConsumerWidget {
                                         Row(
                                           children: [
                                         if (currentMenu.startsWith('cat_0')) ...[
-                                          ChoiceChip(
-                                            label: const Text('🗓️ 일반 일정', style: TextStyle(fontSize: 12)),
-                                            selected: currentMenu == 'cat_0_0' || currentMenu == 'cat_0',
-                                            selectedColor: SoseangTheme.scheduleColor,
-                                            onSelected: (_) => ref.read(currentMenuProvider.notifier).state = 'cat_0_0',
-                                            visualDensity: VisualDensity.compact,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          ChoiceChip(
-                                            label: const Text('🎟️ 기프티콘', style: TextStyle(fontSize: 12)),
-                                            selected: currentMenu == 'cat_0_1',
-                                            selectedColor: SoseangTheme.gifticonColor,
-                                            onSelected: (_) => ref.read(currentMenuProvider.notifier).state = 'cat_0_1',
-                                            visualDensity: VisualDensity.compact,
-                                          ),
+                                          if (selectedDay == null) ...[
+                                            ChoiceChip(
+                                              label: const Text('🗓️ 일반 일정', style: TextStyle(fontSize: 12)),
+                                              selected: currentMenu == 'cat_0_0' || currentMenu == 'cat_0',
+                                              selectedColor: SoseangTheme.scheduleColor,
+                                              onSelected: (_) => ref.read(currentMenuProvider.notifier).state = 'cat_0_0',
+                                              visualDensity: VisualDensity.compact,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            ChoiceChip(
+                                              label: const Text('🎟️ 기프티콘', style: TextStyle(fontSize: 12)),
+                                              selected: currentMenu == 'cat_0_1',
+                                              selectedColor: SoseangTheme.gifticonColor,
+                                              onSelected: (_) => ref.read(currentMenuProvider.notifier).state = 'cat_0_1',
+                                              visualDensity: VisualDensity.compact,
+                                            ),
+                                          ] else ...[
+                                            const Padding(
+                                              padding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                                              child: Text('해당 날짜의 모든 일정 (기프티콘 포함)', style: TextStyle(fontWeight: FontWeight.bold, color: SoseangTheme.textMuted, fontSize: 13)),
+                                            ),
+                                          ],
                                         ],
                                         const Spacer(),
                                         if (filteredCards.isNotEmpty)
