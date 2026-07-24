@@ -1713,6 +1713,10 @@ class HomeScreen extends ConsumerWidget {
                                               firstDay: DateTime.utc(2020, 1, 1),
                                               lastDay: DateTime.utc(2030, 12, 31),
                                               focusedDay: focusedDay,
+                                              headerStyle: const HeaderStyle(
+                                                formatButtonVisible: false,
+                                                titleCentered: true,
+                                              ),
                                               selectedDayPredicate: (day) => isSameDay(selectedDay, day),
                                               onDaySelected: (sDay, fDay) {
                                                 // 동일 날짜 누르면 선택 해제 (전체 보기)
