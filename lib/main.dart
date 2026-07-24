@@ -1683,16 +1683,18 @@ class HomeScreen extends ConsumerWidget {
                                     if (currentMenu.startsWith('cat_0') && selectedDay != null) {
                                       String cardDateStr = c['extraInfo'] ?? '';
                                       if (cardDateStr.isNotEmpty) {
-                                        String y = DateFormat('yyyy').format(selectedDay);
-                                        String m = DateFormat('MM').format(selectedDay);
-                                        String d = DateFormat('dd').format(selectedDay);
-                                        String shortM = selectedDay.month.toString();
-                                        String shortD = selectedDay.day.toString();
-                                        
-                                        bool match = cardDateStr.contains(y) && 
-                                                     (cardDateStr.contains(m) || cardDateStr.contains(shortM)) && 
-                                                     (cardDateStr.contains(d) || cardDateStr.contains(shortD));
-                                        
+                                        bool match = false;
+                                        RegExp dateRegExp = RegExp(r'(\d{4})[-/.\s]+(\d{1,2})[-/.\s]+(\d{1,2})');
+                                        var rMatch = dateRegExp.firstMatch(cardDateStr);
+                                        if (rMatch != null) {
+                                          int cy = int.parse(rMatch.group(1)!);
+                                          int cm = int.parse(rMatch.group(2)!);
+                                          int cd = int.parse(rMatch.group(3)!);
+                                          if (cy == selectedDay.year && cm == selectedDay.month && cd == selectedDay.day) match = true;
+                                        } else {
+                                          String selectedDateStr = DateFormat('yyyy/MM/dd').format(selectedDay);
+                                          if (cardDateStr.contains(selectedDateStr)) match = true;
+                                        }
                                         if (!match) return false;
                                       } else {
                                         return false; // 날짜 정보 없으면 달력 특정일 선택 시 숨김
@@ -1756,15 +1758,17 @@ class HomeScreen extends ConsumerWidget {
                                                   String extra = c['extraInfo'] ?? '';
                                                   if (extra.isEmpty) return false;
                                                   
-                                                  String y = DateFormat('yyyy').format(day);
-                                                  String m = DateFormat('MM').format(day);
-                                                  String d = DateFormat('dd').format(day);
-                                                  String shortM = day.month.toString();
-                                                  String shortD = day.day.toString();
+                                                  RegExp dateRegExp = RegExp(r'(\d{4})[-/.\s]+(\d{1,2})[-/.\s]+(\d{1,2})');
+                                                  var rMatch = dateRegExp.firstMatch(extra);
+                                                  if (rMatch != null) {
+                                                    int cy = int.parse(rMatch.group(1)!);
+                                                    int cm = int.parse(rMatch.group(2)!);
+                                                    int cd = int.parse(rMatch.group(3)!);
+                                                    if (cy == day.year && cm == day.month && cd == day.day) return true;
+                                                  }
                                                   
-                                                  return extra.contains(y) && 
-                                                         (extra.contains(m) || extra.contains(shortM)) && 
-                                                         (extra.contains(d) || extra.contains(shortD));
+                                                  String dayStr = DateFormat('yyyy/MM/dd').format(day);
+                                                  return extra.contains(dayStr);
                                                 }).toList();
                                               },
                                             ),
