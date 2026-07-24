@@ -1683,10 +1683,19 @@ class HomeScreen extends ConsumerWidget {
                                     if (currentMenu.startsWith('cat_0') && selectedDay != null) {
                                       String cardDateStr = c['extraInfo'] ?? '';
                                       if (cardDateStr.isNotEmpty) {
-                                        String selectedDateStr = DateFormat('yyyy/MM/dd').format(selectedDay);
-                                        if (!cardDateStr.contains(selectedDateStr)) return false;
+                                        String y = DateFormat('yyyy').format(selectedDay);
+                                        String m = DateFormat('MM').format(selectedDay);
+                                        String d = DateFormat('dd').format(selectedDay);
+                                        String shortM = selectedDay.month.toString();
+                                        String shortD = selectedDay.day.toString();
+                                        
+                                        bool match = cardDateStr.contains(y) && 
+                                                     (cardDateStr.contains(m) || cardDateStr.contains(shortM)) && 
+                                                     (cardDateStr.contains(d) || cardDateStr.contains(shortD));
+                                        
+                                        if (!match) return false;
                                       } else {
-                                        return false; // 날짜 정보 없으면 숨김
+                                        return false; // 날짜 정보 없으면 달력 특정일 선택 시 숨김
                                       }
                                     }
                                     return true;
@@ -1742,8 +1751,21 @@ class HomeScreen extends ConsumerWidget {
                                                 ),
                                               ),
                                               eventLoader: (day) {
-                                                String dayStr = DateFormat('yyyy/MM/dd').format(day);
-                                                return savedCards.where((c) => c['categoryId'] == 0 && (c['extraInfo'] ?? '').contains(dayStr)).toList();
+                                                return savedCards.where((c) {
+                                                  if (c['categoryId'] != 0) return false;
+                                                  String extra = c['extraInfo'] ?? '';
+                                                  if (extra.isEmpty) return false;
+                                                  
+                                                  String y = DateFormat('yyyy').format(day);
+                                                  String m = DateFormat('MM').format(day);
+                                                  String d = DateFormat('dd').format(day);
+                                                  String shortM = day.month.toString();
+                                                  String shortD = day.day.toString();
+                                                  
+                                                  return extra.contains(y) && 
+                                                         (extra.contains(m) || extra.contains(shortM)) && 
+                                                         (extra.contains(d) || extra.contains(shortD));
+                                                }).toList();
                                               },
                                             ),
                                           ),
