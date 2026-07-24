@@ -1684,7 +1684,7 @@ class HomeScreen extends ConsumerWidget {
                                       String cardDateStr = c['extraInfo'] ?? '';
                                       if (cardDateStr.isNotEmpty) {
                                         bool match = false;
-                                        RegExp dateRegExp = RegExp(r'(\d{4})[-/.\s]+(\d{1,2})[-/.\s]+(\d{1,2})');
+                                        RegExp dateRegExp = RegExp(r'(\d{4})[^\d]+(\d{1,2})[^\d]+(\d{1,2})');
                                         var rMatch = dateRegExp.firstMatch(cardDateStr);
                                         if (rMatch != null) {
                                           int cy = int.parse(rMatch.group(1)!);
@@ -1758,7 +1758,7 @@ class HomeScreen extends ConsumerWidget {
                                                   String extra = c['extraInfo'] ?? '';
                                                   if (extra.isEmpty) return false;
                                                   
-                                                  RegExp dateRegExp = RegExp(r'(\d{4})[-/.\s]+(\d{1,2})[-/.\s]+(\d{1,2})');
+                                                  RegExp dateRegExp = RegExp(r'(\d{4})[^\d]+(\d{1,2})[^\d]+(\d{1,2})');
                                                   var rMatch = dateRegExp.firstMatch(extra);
                                                   if (rMatch != null) {
                                                     int cy = int.parse(rMatch.group(1)!);
