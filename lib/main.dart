@@ -11,7 +11,8 @@ import 'core/ml/on_device_text_classifier.dart';
 import 'core/storage/app_storage.dart';
 import 'core/storage/database_helper.dart';
 import 'core/utils/masking_helper.dart';
-
+import 'package:table_calendar/table_calendar.dart';
+import 'package:intl/intl.dart';
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 🎨 소생 앱 디자인 테마 (뮤트파스텔-아이보리-베이지)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -196,6 +197,10 @@ final placeLocationProvider = Provider((ref) => TextEditingController());
 
 // 전역 데이터 보관함
 final savedCardsProvider = StateProvider<List<Map<String, dynamic>>>((ref) => []);
+
+// 🗓️ 캘린더 관련 상태 (일정 보관함)
+final focusedDayProvider = StateProvider<DateTime>((ref) => DateTime.now());
+final selectedDayProvider = StateProvider<DateTime?>((ref) => null);
 // 선택 삭제 모드
 final isSelectModeProvider = StateProvider<bool>((ref) => false);
 final selectedCardsIdsProvider = StateProvider<Set<int>>((ref) => {});
@@ -1664,11 +1669,27 @@ class HomeScreen extends ConsumerWidget {
                                   int targetCatId = int.parse(menuParts[1]);
                                   int? targetSubCatId = menuParts.length > 2 ? int.parse(menuParts[2]) : null;
 
+                                  final selectedDay = ref.watch(selectedDayProvider);
+                                  final focusedDay = ref.watch(focusedDayProvider);
+
                                   final filteredCards = savedCards.where((c) {
                                     if (targetSubCatId != null) {
-                                      return c['categoryId'] == targetCatId && c['subCategoryId'] == targetSubCatId;
+                                      if (c['categoryId'] != targetCatId || c['subCategoryId'] != targetSubCatId) return false;
+                                    } else {
+                                      if (c['categoryId'] != targetCatId) return false;
                                     }
-                                    return c['categoryId'] == targetCatId;
+
+                                    // B방식: 캘린더 날짜 필터링 (일정, 기프티콘일 때만)
+                                    if (currentMenu.startsWith('cat_0') && selectedDay != null) {
+                                      String cardDateStr = c['extraInfo'] ?? '';
+                                      if (cardDateStr.isNotEmpty) {
+                                        String selectedDateStr = DateFormat('yyyy/MM/dd').format(selectedDay);
+                                        if (!cardDateStr.contains(selectedDateStr)) return false;
+                                      } else {
+                                        return false; // 날짜 정보 없으면 숨김
+                                      }
+                                    }
+                                    return true;
                                   }).toList();
 
                                   final isSelectMode = ref.watch(isSelectModeProvider);
@@ -1676,8 +1697,55 @@ class HomeScreen extends ConsumerWidget {
 
                                   return Padding(
                                     padding: const EdgeInsets.only(bottom: 12),
-                                    child: Row(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.stretch,
                                       children: [
+                                        if (currentMenu.startsWith('cat_0')) ...[
+                                          // 🗓️ 캘린더 위젯
+                                          Container(
+                                            margin: const EdgeInsets.only(bottom: 16),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius: BorderRadius.circular(16),
+                                              border: Border.all(color: SoseangTheme.border),
+                                            ),
+                                            child: TableCalendar(
+                                              firstDay: DateTime.utc(2020, 1, 1),
+                                              lastDay: DateTime.utc(2030, 12, 31),
+                                              focusedDay: focusedDay,
+                                              selectedDayPredicate: (day) => isSameDay(selectedDay, day),
+                                              onDaySelected: (sDay, fDay) {
+                                                // 동일 날짜 누르면 선택 해제 (전체 보기)
+                                                if (isSameDay(selectedDay, sDay)) {
+                                                  ref.read(selectedDayProvider.notifier).state = null;
+                                                } else {
+                                                  ref.read(selectedDayProvider.notifier).state = sDay;
+                                                  ref.read(focusedDayProvider.notifier).state = fDay;
+                                                }
+                                              },
+                                              calendarStyle: CalendarStyle(
+                                                selectedDecoration: const BoxDecoration(
+                                                  color: SoseangTheme.scheduleColor,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                todayDecoration: BoxDecoration(
+                                                  color: SoseangTheme.scheduleColor.withOpacity(0.3),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                markerDecoration: const BoxDecoration(
+                                                  color: SoseangTheme.scheduleDark,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                              ),
+                                              eventLoader: (day) {
+                                                String dayStr = DateFormat('yyyy/MM/dd').format(day);
+                                                return savedCards.where((c) => c['categoryId'] == 0 && (c['extraInfo'] ?? '').contains(dayStr)).toList();
+                                              },
+                                            ),
+                                          ),
+                                        ],
+                                        Row(
+                                          children: [
                                         if (currentMenu.startsWith('cat_0')) ...[
                                           ChoiceChip(
                                             label: const Text('🗓️ 일반 일정', style: TextStyle(fontSize: 12)),
@@ -1755,10 +1823,12 @@ class HomeScreen extends ConsumerWidget {
                                               },
                                             ),
                                       ],
-                                    ),
-                                  );
-                                },
-                              ),
+                                    ), // Row
+                                  ],
+                                ), // Column
+                              ); // Padding
+                            },
+                          ),
                               NavigatorBuilder(
                                 builder: (context) {
                                   List<String> menuParts = currentMenu.split('_');
