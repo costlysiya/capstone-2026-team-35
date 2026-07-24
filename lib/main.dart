@@ -611,7 +611,7 @@ class HomeScreen extends ConsumerWidget {
     }
     try {
       final dio = Dio();
-      const serverUrl = 'http://172.30.1.59:8000/api/analyze/v2';
+      const serverUrl = 'http://44.195.33.82:8000/api/analyze/v2';
       
       final localCategoryIndex = ref.read(selectedCategoryProvider);
       final indexToType = {
