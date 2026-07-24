@@ -1876,7 +1876,35 @@ class HomeScreen extends ConsumerWidget {
                                   int targetCatId = int.parse(menuParts[1]);
                                   int? targetSubCatId = menuParts.length > 2 ? int.parse(menuParts[2]) : null;
 
+                                  final selectedDay = ref.watch(selectedDayProvider);
+
                                   final filteredCards = savedCards.where((c) {
+                                    // 캘린더 날짜 필터링 (선택된 날짜가 있을 때: 일반일정/기프티콘 통합)
+                                    if (currentMenu.startsWith('cat_0') && selectedDay != null) {
+                                      if (c['categoryId'] != targetCatId) return false;
+                                      
+                                      String cardDateStr = c['extraInfo'] ?? '';
+                                      if (cardDateStr.isNotEmpty) {
+                                        bool match = false;
+                                        RegExp dateRegExp = RegExp(r'(\d{4})[^\d]+(\d{1,2})[^\d]+(\d{1,2})');
+                                        var rMatch = dateRegExp.firstMatch(cardDateStr);
+                                        if (rMatch != null) {
+                                          int cy = int.parse(rMatch.group(1)!);
+                                          int cm = int.parse(rMatch.group(2)!);
+                                          int cd = int.parse(rMatch.group(3)!);
+                                          if (cy == selectedDay.year && cm == selectedDay.month && cd == selectedDay.day) match = true;
+                                        } else {
+                                          String selectedDateStr = DateFormat('yyyy/MM/dd').format(selectedDay);
+                                          if (cardDateStr.contains(selectedDateStr)) match = true;
+                                        }
+                                        if (!match) return false;
+                                      } else {
+                                        return false; // 날짜 정보 없으면 숨김
+                                      }
+                                      return true; // 여기서 true로 바로 반환 (서브카테고리 무시)
+                                    }
+
+                                    // 날짜 미선택 시 평소 필터링
                                     if (targetSubCatId != null) {
                                       return c['categoryId'] == targetCatId && c['subCategoryId'] == targetSubCatId;
                                     }
