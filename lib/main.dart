@@ -1650,67 +1650,123 @@ class HomeScreen extends ConsumerWidget {
                                             ],
                                           ),
                                           const SizedBox(height: 15),
-                                          TextField(
-                                            controller: titleController,
-                                            decoration: InputDecoration(
-                                              labelText: '📌 제목 수정',
-                                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                                              fillColor: SoseangTheme.ivory,
-                                              filled: true,
-                                            ),
+                                          ValueListenableBuilder<TextEditingValue>(
+                                            valueListenable: titleController,
+                                            builder: (context, value, child) {
+                                              final isEmpty = value.text.trim().isEmpty;
+                                              final isHighlighted = ocrStatus == 'success' && isEmpty;
+                                              return TextField(
+                                                controller: titleController,
+                                                decoration: InputDecoration(
+                                                  labelText: '📌 제목 수정',
+                                                  border: OutlineInputBorder(
+                                                    borderRadius: BorderRadius.circular(10),
+                                                    borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(),
+                                                  ),
+                                                  enabledBorder: OutlineInputBorder(
+                                                    borderRadius: BorderRadius.circular(10),
+                                                    borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(color: Colors.black38),
+                                                  ),
+                                                  fillColor: isHighlighted ? Colors.red.shade50 : SoseangTheme.ivory,
+                                                  filled: true,
+                                                ),
+                                              );
+                                            },
                                           ),
                                           const SizedBox(height: 15),
                                           
                                           if (selectedCategory == 0) ...[
-                                            TextField(
-                                              controller: scheduleDateController,
-                                              readOnly: true,
-                                              onTap: () async {
-                                                DateTime? pickedDate = await showDatePicker(
-                                                  context: context,
-                                                  initialDate: DateTime.now(),
-                                                  firstDate: DateTime(2000),
-                                                  lastDate: DateTime(2101),
+                                            ValueListenableBuilder<TextEditingValue>(
+                                              valueListenable: scheduleDateController,
+                                              builder: (context, value, child) {
+                                                final isEmpty = value.text.trim().isEmpty;
+                                                final isHighlighted = ocrStatus == 'success' && isEmpty;
+                                                return TextField(
+                                                  controller: scheduleDateController,
+                                                  readOnly: true,
+                                                  onTap: () async {
+                                                    DateTime? pickedDate = await showDatePicker(
+                                                      context: context,
+                                                      initialDate: DateTime.now(),
+                                                      firstDate: DateTime(2000),
+                                                      lastDate: DateTime(2101),
+                                                    );
+                                                    if (pickedDate != null) {
+                                                      String formattedDate = "${pickedDate.year}/${pickedDate.month.toString().padLeft(2, '0')}/${pickedDate.day.toString().padLeft(2, '0')}";
+                                                      scheduleDateController.text = formattedDate;
+                                                    }
+                                                  },
+                                                  decoration: InputDecoration(
+                                                    labelText: selectedSubCategory == 1 ? '⏰ 기프티콘 유효기간 선택' : '⏰ 일정 날짜 선택', 
+                                                    border: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(10),
+                                                      borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(),
+                                                    ),
+                                                    enabledBorder: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(10),
+                                                      borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(color: Colors.black38),
+                                                    ),
+                                                    prefixIcon: Icon(Icons.calendar_today, color: isHighlighted ? Colors.redAccent : SoseangTheme.scheduleDark),
+                                                    fillColor: isHighlighted ? Colors.red.shade50 : SoseangTheme.ivory,
+                                                    filled: true,
+                                                  ),
                                                 );
-                                                if (pickedDate != null) {
-                                                  String formattedDate = "${pickedDate.year}/${pickedDate.month.toString().padLeft(2, '0')}/${pickedDate.day.toString().padLeft(2, '0')}";
-                                                  scheduleDateController.text = formattedDate;
-                                                }
                                               },
-                                              decoration: InputDecoration(
-                                                labelText: selectedSubCategory == 1 ? '⏰ 기프티콘 유효기간 선택' : '⏰ 일정 날짜 선택', 
-                                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), 
-                                                prefixIcon: Icon(Icons.calendar_today, color: SoseangTheme.scheduleDark),
-                                                fillColor: SoseangTheme.ivory,
-                                                filled: true,
-                                              ),
                                             ),
                                             const SizedBox(height: 15),
                                           ],
                                           if (selectedCategory == 1) ...[
-                                            TextField(
-                                              controller: placeLocationController,
-                                              decoration: InputDecoration(
-                                                labelText: '📍 장소 위치/주소 입력',
-                                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                                                prefixIcon: Icon(Icons.pin_drop, color: SoseangTheme.placeDark),
-                                                fillColor: SoseangTheme.ivory,
-                                                filled: true,
-                                              ),
+                                            ValueListenableBuilder<TextEditingValue>(
+                                              valueListenable: placeLocationController,
+                                              builder: (context, value, child) {
+                                                final isEmpty = value.text.trim().isEmpty;
+                                                final isHighlighted = ocrStatus == 'success' && isEmpty;
+                                                return TextField(
+                                                  controller: placeLocationController,
+                                                  decoration: InputDecoration(
+                                                    labelText: '📍 장소 위치/주소 입력',
+                                                    border: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(10),
+                                                      borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(),
+                                                    ),
+                                                    enabledBorder: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(10),
+                                                      borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(color: Colors.black38),
+                                                    ),
+                                                    prefixIcon: Icon(Icons.pin_drop, color: isHighlighted ? Colors.redAccent : SoseangTheme.placeDark),
+                                                    fillColor: isHighlighted ? Colors.red.shade50 : SoseangTheme.ivory,
+                                                    filled: true,
+                                                  ),
+                                                );
+                                              },
                                             ),
                                             const SizedBox(height: 15),
                                           ],
                                           
                                           if ((ref.watch(draftCacheProvider)[pickedImages[activeIndex].path])?.aiFields == null)
-                                            TextField(
-                                              controller: contentController,
-                                              maxLines: 4,
-                                              decoration: InputDecoration(
-                                                labelText: '📝 원본 OCR 텍스트',
-                                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                                                fillColor: SoseangTheme.ivory,
-                                                filled: true,
-                                              ),
+                                            ValueListenableBuilder<TextEditingValue>(
+                                              valueListenable: contentController,
+                                              builder: (context, value, child) {
+                                                final isEmpty = value.text.trim().isEmpty;
+                                                final isHighlighted = ocrStatus == 'success' && isEmpty;
+                                                return TextField(
+                                                  controller: contentController,
+                                                  maxLines: 4,
+                                                  decoration: InputDecoration(
+                                                    labelText: '📝 원본 OCR 텍스트',
+                                                    border: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(10),
+                                                      borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(),
+                                                    ),
+                                                    enabledBorder: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(10),
+                                                      borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(color: Colors.black38),
+                                                    ),
+                                                    fillColor: isHighlighted ? Colors.red.shade50 : SoseangTheme.ivory,
+                                                    filled: true,
+                                                  ),
+                                                );
+                                              },
                                             ),
                                           const SizedBox(height: 10),
                                           const DynamicFeaturesCard(),
