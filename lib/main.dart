@@ -82,6 +82,7 @@ void main() async {
     String extraInfo = '';
     int subCategoryId = 0;
     
+    Map<String, dynamic>? rawFields;
     try {
       if (row['fields'] != null && row['fields'].toString().startsWith('{')) {
         final parsed = jsonDecode(row['fields']);
@@ -89,6 +90,7 @@ void main() async {
         content = parsed['content'] ?? content;
         extraInfo = parsed['extraInfo'] ?? extraInfo;
         subCategoryId = parsed['subCategoryId'] ?? 0;
+        rawFields = parsed;
       }
     } catch(e) {}
 
@@ -100,6 +102,7 @@ void main() async {
       'content': content,
       'extraInfo': extraInfo,
       'imagePath': row['image_path'],
+      'rawFields': rawFields,
     };
   }).toList();
 
@@ -935,6 +938,14 @@ class HomeScreen extends ConsumerWidget {
             'content': itemContent,
             'extraInfo': itemExtraInfo,
             'imagePath': finalImagePath, 
+            'rawFields': {
+              ...item,
+              'title': itemTitle,
+              'content': itemContent,
+              'extraInfo': itemExtraInfo,
+              'categoryId': categoryId,
+              'subCategoryId': categoryId == 0 ? subCategoryId : 0,
+            },
           };
           ref.read(savedCardsProvider.notifier).update((state) => [newCard, ...state]);
         }
@@ -964,6 +975,14 @@ class HomeScreen extends ConsumerWidget {
           'content': content,
           'extraInfo': extraInfo,
           'imagePath': finalImagePath, 
+          'rawFields': {
+            if (aiFields != null) ...aiFields,
+            'title': title,
+            'content': content,
+            'extraInfo': extraInfo,
+            'categoryId': categoryId,
+            'subCategoryId': categoryId == 0 ? subCategoryId : 0,
+          },
         };
         ref.read(savedCardsProvider.notifier).update((state) => [newCard, ...state]);
       }
@@ -1041,6 +1060,60 @@ class HomeScreen extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildSavedAiFields(Map<String, dynamic> rawFields) {
+    final excludeKeys = {
+      'title', 'name', 'product_name',
+      'start_at', 'expires_at',
+      'address', 'price_amount',
+      'items', 'body',
+      'keep_photo', 'map_ready',
+      'calendar_type', 'reminder_days',
+      'recurrence',
+      'confidence', 'status', 'id',
+      'missing_fields', 'masked_info',
+      'categoryId', 'subCategoryId',
+      'content', 'extraInfo',
+    };
+
+    final Map<String, String> fieldLabels = {
+      'title': '제목', 'memo': '메모',
+      'sub_type': '세부 분류', 'start_at': '시작일', 'expires_at': '만료일',
+      'location': '장소', 'barcode_number': '바코드 번호',
+      'name': '상호명', 'category': '카테고리', 'address': '주소', 'region': '지역',
+      'product_name': '상품명', 'price_amount': '가격', 'brand_or_store': '브랜드/판매처', 'option': '옵션', 'url': '상품 링크',
+      'body': '본문', 'tags': '태그',
+      'original_price': '정가', 'discount_rate': '할인율', 'rating': '평점', 'hours': '영업시간', 'seller': '판매처', 'description': '설명', 'exchange_place': '교환처',
+    };
+
+    final entryList = rawFields.entries
+        .where((entry) => !excludeKeys.contains(entry.key) && fieldLabels.containsKey(entry.key) && entry.value != null && entry.value.toString().trim().isNotEmpty)
+        .toList();
+
+    if (entryList.isEmpty) return const SizedBox();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: entryList.map((entry) {
+        final label = fieldLabels[entry.key] ?? entry.key;
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4.0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 80,
+                child: Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.bold)),
+              ),
+              Expanded(
+                child: Text(entry.value.toString(), style: const TextStyle(fontSize: 13, color: Colors.black87)),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -1134,9 +1207,15 @@ class HomeScreen extends ConsumerWidget {
                         Text(card['extraInfo'], style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: cardStyle['color'])),
                         const SizedBox(height: 15),
                       ],
-                      const Text('📝 추출 상세 본문', style: TextStyle(fontWeight: FontWeight.bold, color: SoseangTheme.textMuted, fontSize: 12)),
-                      const SizedBox(height: 5),
-                      Text(card['content'], style: const TextStyle(fontSize: 14, height: 1.4, color: SoseangTheme.textDark)),
+                      if (card['rawFields'] != null && (card['rawFields'] as Map).isNotEmpty) ...[
+                        const Text('✨ AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple, fontSize: 12)),
+                        const SizedBox(height: 5),
+                        _buildSavedAiFields(card['rawFields']),
+                      ] else ...[
+                        const Text('📝 추출 상세 본문', style: TextStyle(fontWeight: FontWeight.bold, color: SoseangTheme.textMuted, fontSize: 12)),
+                        const SizedBox(height: 5),
+                        Text(card['content'], style: const TextStyle(fontSize: 14, height: 1.4, color: SoseangTheme.textDark)),
+                      ],
                       const SizedBox(height: 25),
                       Row(
                         children: [
@@ -1200,7 +1279,20 @@ class HomeScreen extends ConsumerWidget {
                                                 else
                                                   TextField(controller: extraCtrl, decoration: const InputDecoration(labelText: '추가 정보')),
                                                 const SizedBox(height: 10),
-                                                TextField(controller: contentCtrl, maxLines: 5, decoration: const InputDecoration(labelText: '추출 본문')),
+                                                if (card['rawFields'] != null && (card['rawFields'] as Map).isNotEmpty) ...[
+                                                  const Align(
+                                                    alignment: Alignment.centerLeft,
+                                                    child: Text('✨ AI 추출 상세 정보 (편집 불가)', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple, fontSize: 12)),
+                                                  ),
+                                                  const SizedBox(height: 5),
+                                                  Container(
+                                                    width: double.infinity,
+                                                    padding: const EdgeInsets.all(10),
+                                                    decoration: BoxDecoration(color: Colors.black.withOpacity(0.03), borderRadius: BorderRadius.circular(8)),
+                                                    child: _buildSavedAiFields(card['rawFields']),
+                                                  ),
+                                                ] else
+                                                  TextField(controller: contentCtrl, maxLines: 5, decoration: const InputDecoration(labelText: '추출 본문')),
                                               ],
                                             ),
                                           ),
