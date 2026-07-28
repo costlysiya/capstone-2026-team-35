@@ -199,7 +199,7 @@ final placeLocationProvider = Provider((ref) => TextEditingController());
 final savedCardsProvider = StateProvider<List<Map<String, dynamic>>>((ref) => []);
 
 // 장소 탭 전용 상태
-final placeRegionProvider = StateProvider<String>((ref) => '전체');
+final placeRegionProvider = StateProvider<Set<String>>((ref) => {});
 final placeSearchProvider = StateProvider<String>((ref) => '');
 
 // 🗓️ 캘린더 관련 상태 (일정 보관함)
@@ -1821,9 +1821,16 @@ class HomeScreen extends ConsumerWidget {
                                         if (!title.contains(searchStr) && !extra.contains(searchStr)) return false;
                                       }
                                       
-                                      if (region != '전체') {
+                                      if (region.isNotEmpty) {
                                         final extra = (c['extraInfo'] ?? '').toString();
-                                        if (!extra.contains(region)) return false;
+                                        bool regionMatched = false;
+                                        for (String r in region) {
+                                          if (extra.contains(r)) {
+                                            regionMatched = true;
+                                            break;
+                                          }
+                                        }
+                                        if (!regionMatched) return false;
                                       }
                                       return true;
                                     }
@@ -1924,32 +1931,93 @@ class HomeScreen extends ConsumerWidget {
                                             ),
                                           ),
                                           const SizedBox(height: 12),
-                                          // 지역 필터 칩들 (가로 스크롤)
-                                          SingleChildScrollView(
-                                            scrollDirection: Axis.horizontal,
-                                            child: Row(
-                                              children: ['전체', '서울', '부산', '대구', '인천', '광주', '대전', '울산', '경기', '강원', '충청', '전라', '경북', '경남', '제주'].map((region) {
-                                                int count = 0;
-                                                if (region == '전체') {
-                                                  count = savedCards.where((c) => c['categoryId'] == 1).length;
-                                                } else {
-                                                  count = savedCards.where((c) => c['categoryId'] == 1 && (c['extraInfo'] ?? '').toString().contains(region)).length;
+                                          // 다중 선택 지역 필터 드롭다운 버튼
+                                          Builder(
+                                            builder: (ctx) {
+                                              final selectedRegions = ref.watch(placeRegionProvider);
+                                              final allRegions = ['서울', '부산', '대구', '인천', '광주', '대전', '울산', '경기', '강원', '충청', '전라', '경북', '경남', '제주', '해외'];
+                                              String btnText = '전체';
+                                              if (selectedRegions.isNotEmpty) {
+                                                btnText = selectedRegions.first;
+                                                if (selectedRegions.length > 1) {
+                                                  btnText += ' 외 ${selectedRegions.length - 1}곳';
                                                 }
-                                                final isSelected = ref.watch(placeRegionProvider) == region;
-                                                return Padding(
-                                                  padding: const EdgeInsets.only(right: 6),
-                                                  child: ChoiceChip(
-                                                    label: Text('$region($count)', style: TextStyle(fontSize: 12, color: isSelected ? Colors.white : SoseangTheme.placeDark)),
-                                                    selected: isSelected,
-                                                    selectedColor: SoseangTheme.placeColor,
-                                                    backgroundColor: Colors.white,
-                                                    side: BorderSide(color: SoseangTheme.placeColor.withOpacity(0.5)),
-                                                    showCheckmark: false,
-                                                    onSelected: (_) => ref.read(placeRegionProvider.notifier).state = region,
+                                              }
+                                              return InkWell(
+                                                onTap: () {
+                                                  showDialog(
+                                                    context: context,
+                                                    builder: (dCtx) {
+                                                      final currentSelected = Set<String>.from(ref.read(placeRegionProvider));
+                                                      return StatefulBuilder(
+                                                        builder: (context, setState) {
+                                                          return AlertDialog(
+                                                            title: const Text('지역 다중 선택', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                                            contentPadding: const EdgeInsets.only(top: 12, bottom: 0),
+                                                            content: SizedBox(
+                                                              width: double.maxFinite,
+                                                              child: ListView.builder(
+                                                                shrinkWrap: true,
+                                                                itemCount: allRegions.length,
+                                                                itemBuilder: (context, index) {
+                                                                  final region = allRegions[index];
+                                                                  final count = savedCards.where((c) => c['categoryId'] == 1 && (c['extraInfo'] ?? '').toString().contains(region)).length;
+                                                                  return CheckboxListTile(
+                                                                    title: Text('$region ($count)', style: const TextStyle(fontSize: 14)),
+                                                                    value: currentSelected.contains(region),
+                                                                    activeColor: SoseangTheme.placeColor,
+                                                                    dense: true,
+                                                                    controlAffinity: ListTileControlAffinity.leading,
+                                                                    onChanged: (val) {
+                                                                      setState(() {
+                                                                        if (val == true) {
+                                                                          currentSelected.add(region);
+                                                                        } else {
+                                                                          currentSelected.remove(region);
+                                                                        }
+                                                                      });
+                                                                    },
+                                                                  );
+                                                                },
+                                                              ),
+                                                            ),
+                                                            actions: [
+                                                              TextButton(
+                                                                onPressed: () => setState(() => currentSelected.clear()),
+                                                                child: const Text('초기화', style: TextStyle(color: SoseangTheme.textMuted)),
+                                                              ),
+                                                              ElevatedButton(
+                                                                onPressed: () {
+                                                                  ref.read(placeRegionProvider.notifier).state = currentSelected;
+                                                                  Navigator.pop(dCtx);
+                                                                },
+                                                                style: ElevatedButton.styleFrom(backgroundColor: SoseangTheme.placeColor, foregroundColor: Colors.white),
+                                                                child: const Text('적용'),
+                                                              ),
+                                                            ],
+                                                          );
+                                                        },
+                                                      );
+                                                    }
+                                                  );
+                                                },
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.white,
+                                                    borderRadius: BorderRadius.circular(20),
+                                                    border: Border.all(color: SoseangTheme.placeColor.withOpacity(0.5)),
                                                   ),
-                                                );
-                                              }).toList(),
-                                            ),
+                                                  child: Row(
+                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    children: [
+                                                      Text(btnText, style: const TextStyle(fontSize: 14, color: SoseangTheme.placeDark)),
+                                                      const Icon(Icons.arrow_drop_down, color: SoseangTheme.placeColor),
+                                                    ],
+                                                  ),
+                                                ),
+                                              );
+                                            },
                                           ),
                                           const SizedBox(height: 12),
                                         ],
@@ -2092,9 +2160,16 @@ class HomeScreen extends ConsumerWidget {
                                         if (!title.contains(searchStr) && !extra.contains(searchStr)) return false;
                                       }
                                       
-                                      if (region != '전체') {
+                                      if (region.isNotEmpty) {
                                         final extra = (c['extraInfo'] ?? '').toString();
-                                        if (!extra.contains(region)) return false;
+                                        bool regionMatched = false;
+                                        for (String r in region) {
+                                          if (extra.contains(r)) {
+                                            regionMatched = true;
+                                            break;
+                                          }
+                                        }
+                                        if (!regionMatched) return false;
                                       }
                                       return true;
                                     }
