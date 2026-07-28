@@ -532,6 +532,33 @@ class HomeScreen extends ConsumerWidget {
     return null;
   }
 
+  Future<void> _editAndCropActiveImage(BuildContext context, WidgetRef ref) async {
+    final images = ref.read(pickedImagesProvider);
+    final activeIndex = ref.read(activeImageIndexProvider);
+    if (images.isEmpty || activeIndex >= images.length) return;
+
+    final originalFile = images[activeIndex];
+    final croppedFile = await _cropImage(context, originalFile.path);
+    if (croppedFile != null) {
+      // 1. 교체
+      final updatedImages = List<XFile>.from(images);
+      updatedImages[activeIndex] = croppedFile;
+      ref.read(pickedImagesProvider.notifier).state = updatedImages;
+
+      // 2. 이전 캐시 삭제
+      final cache = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
+      cache.remove(originalFile.path);
+      ref.read(draftCacheProvider.notifier).state = cache;
+
+      // 3. 즉시 OCR 큐 다시 돌리기 위해 상태 초기화 및 processAndCache 호출
+      ref.read(ocrStatusProvider.notifier).state = 'loading';
+      _clearAllFields(ref);
+      await _processAndCacheImage(ref, croppedFile);
+      _loadDraftToUI(ref, croppedFile.path);
+    }
+  }
+
+
   // 사용자가 명시적으로 선택 시 호출되는 AI 기반 구조화 분석 모듈
   Future<void> _runAIAnalysis(BuildContext context, WidgetRef ref, XFile image) async {
     final rawText = ref.read(contentControllerProvider).text;
@@ -1535,6 +1562,18 @@ class HomeScreen extends ConsumerWidget {
                                               Text('🔍 온디바이스 AI 분석 중...', style: TextStyle(color: Colors.white, fontSize: 13)),
                                             ],
                                           ),
+                                        ),
+                                      ),
+                                    if (ocrStatus != 'loading' && pickedImages.isNotEmpty)
+                                      Positioned(
+                                        bottom: 12,
+                                        right: 12,
+                                        child: FloatingActionButton.small(
+                                          heroTag: 'edit_image_btn',
+                                          backgroundColor: Colors.white.withValues(alpha: 0.9),
+                                          foregroundColor: Colors.deepPurple,
+                                          onPressed: () => _editAndCropActiveImage(context, ref),
+                                          child: const Icon(Icons.crop_rotate, size: 20),
                                         ),
                                       ),
                                   ],
