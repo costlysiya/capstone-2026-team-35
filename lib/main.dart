@@ -834,6 +834,28 @@ class HomeScreen extends ConsumerWidget {
       return;
     }
 
+    // 강조된 빈 필드 확인 (AI 분석 완료 후 필수 필드 검증)
+    final ocrStatus = ref.read(ocrStatusProvider);
+    if (ocrStatus == 'success') {
+      final List<String> emptyFields = [];
+      if (categoryId == 0 && ref.read(scheduleDateProvider).text.trim().isEmpty) {
+        emptyFields.add('일정 날짜');
+      }
+      if (categoryId == 1 && ref.read(placeLocationProvider).text.trim().isEmpty) {
+        emptyFields.add('장소 위치/주소');
+      }
+      if (emptyFields.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠️ 비워진 필드를 먼저 입력해 주세요: ${emptyFields.join(', ')}'),
+            backgroundColor: Colors.redAccent,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+    }
+
     String extraInfo = "";
     if (categoryId == 0) extraInfo = ref.read(scheduleDateProvider).text;
     if (categoryId == 1) extraInfo = ref.read(placeLocationProvider).text;
