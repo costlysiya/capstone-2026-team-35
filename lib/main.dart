@@ -1650,13 +1650,12 @@ class HomeScreen extends ConsumerWidget {
                                             ],
                                           ),
                                           const SizedBox(height: 15),
-                                          ValueListenableBuilder<TextEditingValue>(
-                                            valueListenable: titleController,
-                                            builder: (context, value, child) {
-                                              final isEmpty = value.text.trim().isEmpty;
-                                              final isHighlighted = ocrStatus == 'success' && isEmpty;
+                                          Builder(
+                                            builder: (context) {
+                                              final isHighlighted = ocrStatus == 'success' && titleController.text.trim().isEmpty;
                                               return TextField(
                                                 controller: titleController,
+                                                onChanged: (_) => (context as Element).markNeedsBuild(),
                                                 decoration: InputDecoration(
                                                   labelText: '📌 제목 수정',
                                                   border: OutlineInputBorder(
@@ -1676,11 +1675,9 @@ class HomeScreen extends ConsumerWidget {
                                           const SizedBox(height: 15),
                                           
                                           if (selectedCategory == 0) ...[
-                                            ValueListenableBuilder<TextEditingValue>(
-                                              valueListenable: scheduleDateController,
-                                              builder: (context, value, child) {
-                                                final isEmpty = value.text.trim().isEmpty;
-                                                final isHighlighted = ocrStatus == 'success' && isEmpty;
+                                            Builder(
+                                              builder: (context) {
+                                                final isHighlighted = ocrStatus == 'success' && scheduleDateController.text.trim().isEmpty;
                                                 return TextField(
                                                   controller: scheduleDateController,
                                                   readOnly: true,
@@ -1694,6 +1691,7 @@ class HomeScreen extends ConsumerWidget {
                                                     if (pickedDate != null) {
                                                       String formattedDate = "${pickedDate.year}/${pickedDate.month.toString().padLeft(2, '0')}/${pickedDate.day.toString().padLeft(2, '0')}";
                                                       scheduleDateController.text = formattedDate;
+                                                      (context as Element).markNeedsBuild();
                                                     }
                                                   },
                                                   decoration: InputDecoration(
@@ -1716,13 +1714,12 @@ class HomeScreen extends ConsumerWidget {
                                             const SizedBox(height: 15),
                                           ],
                                           if (selectedCategory == 1) ...[
-                                            ValueListenableBuilder<TextEditingValue>(
-                                              valueListenable: placeLocationController,
-                                              builder: (context, value, child) {
-                                                final isEmpty = value.text.trim().isEmpty;
-                                                final isHighlighted = ocrStatus == 'success' && isEmpty;
+                                            Builder(
+                                              builder: (context) {
+                                                final isHighlighted = ocrStatus == 'success' && placeLocationController.text.trim().isEmpty;
                                                 return TextField(
                                                   controller: placeLocationController,
+                                                  onChanged: (_) => (context as Element).markNeedsBuild(),
                                                   decoration: InputDecoration(
                                                     labelText: '📍 장소 위치/주소 입력',
                                                     border: OutlineInputBorder(
@@ -1744,14 +1741,13 @@ class HomeScreen extends ConsumerWidget {
                                           ],
                                           
                                           if ((ref.watch(draftCacheProvider)[pickedImages[activeIndex].path])?.aiFields == null)
-                                            ValueListenableBuilder<TextEditingValue>(
-                                              valueListenable: contentController,
-                                              builder: (context, value, child) {
-                                                final isEmpty = value.text.trim().isEmpty;
-                                                final isHighlighted = ocrStatus == 'success' && isEmpty;
+                                            Builder(
+                                              builder: (context) {
+                                                final isHighlighted = ocrStatus == 'success' && contentController.text.trim().isEmpty;
                                                 return TextField(
                                                   controller: contentController,
                                                   maxLines: 4,
+                                                  onChanged: (_) => (context as Element).markNeedsBuild(),
                                                   decoration: InputDecoration(
                                                     labelText: '📝 원본 OCR 텍스트',
                                                     border: OutlineInputBorder(
