@@ -1339,6 +1339,15 @@ class HomeScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => ref.read(currentMenuProvider.notifier).state = 'home',
+        backgroundColor: SoseangTheme.scheduleDark,
+        foregroundColor: Colors.white,
+        elevation: 2,
+        shape: const CircleBorder(),
+        child: const Icon(Icons.add, size: 32),
+      ),
       appBar: AppBar(
         title: Text(appBarTitle),
         centerTitle: true,
@@ -2272,18 +2281,9 @@ class HomeScreen extends ConsumerWidget {
               ),
               label: '장소',
             ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.camera_alt_outlined, color: currentTabIndex == 2 ? SoseangTheme.textDark : SoseangTheme.textMuted),
-              activeIcon: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: SoseangTheme.cream,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: SoseangTheme.border, width: 1.5),
-                ),
-                child: const Icon(Icons.camera_alt, color: SoseangTheme.textDark),
-              ),
-              label: '대기실',
+            const BottomNavigationBarItem(
+              icon: SizedBox(height: 24),
+              label: '',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.favorite_border, color: currentTabIndex == 3 ? SoseangTheme.wishDark : SoseangTheme.textMuted),
