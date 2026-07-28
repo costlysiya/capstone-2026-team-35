@@ -818,7 +818,6 @@ class HomeScreen extends ConsumerWidget {
     }
 
     // 1. 🚀 [새로 추가된 로컬 DB 영구 저장 로직]
-    int? dbId;
     try {
       final indexToType = {
         0: 'SCHEDULE',
@@ -830,39 +829,98 @@ class HomeScreen extends ConsumerWidget {
       final activePath = images[activeIndex].path;
       final aiFields = ref.read(draftCacheProvider)[activePath]?.aiFields;
       
-      final dbRow = {
-        'type': indexToType[categoryId] ?? 'MEMO',
-        'confidence': 1.0, // 사용자가 명시적으로 수정한 최종 승인이므로 1.0 부여
-        'fields': jsonEncode({
-          if (aiFields != null) ...aiFields,
+      final bool hasItems = aiFields != null && aiFields.containsKey('items') && aiFields['items'] is List && (aiFields['items'] as List).isNotEmpty;
+      final List<dynamic> items = hasItems ? (aiFields['items'] as List) : [];
+      
+      if (hasItems) {
+        final currentIdx = ref.read(currentItemIndexProvider);
+        final safeCurrentIdx = currentIdx >= items.length ? 0 : currentIdx;
+
+        for (int i = 0; i < items.length; i++) {
+          final item = items[i] as Map<String, dynamic>;
+          
+          String itemTitle = "";
+          String itemExtraInfo = "";
+          String itemContent = content; // 본문(OCR원문 등)은 전체적으로 공유
+
+          // 사용자가 현재 화면에서 수정한 항목은 text controller 값 사용
+          if (i == safeCurrentIdx) {
+            itemTitle = title;
+            itemExtraInfo = extraInfo;
+          } else {
+            // 다른 항목들은 aiFields 내부 값으로 초기화
+            if (categoryId == 1) { // PLACE
+              itemTitle = item['name']?.toString() ?? '제목 없음';
+              itemExtraInfo = item['address']?.toString() ?? item['region']?.toString() ?? '';
+            } else if (categoryId == 2) { // WISHLIST
+              itemTitle = item['product_name']?.toString() ?? '제목 없음';
+              itemExtraInfo = item['price_amount']?.toString() ?? '';
+            } else {
+              itemTitle = item['title']?.toString() ?? item['name']?.toString() ?? '제목 없음';
+              itemExtraInfo = extraInfo;
+            }
+          }
+
+          final dbRow = {
+            'type': indexToType[categoryId] ?? 'MEMO',
+            'confidence': 1.0, 
+            'fields': jsonEncode({
+              ...item,
+              'title': itemTitle,
+              'content': itemContent,
+              'extraInfo': itemExtraInfo,
+              'categoryId': categoryId,
+              'subCategoryId': categoryId == 0 ? subCategoryId : 0,
+            }),
+            'image_path': finalImagePath,
+            'status': 'CONFIRMED'
+          };
+          
+          final dbId = await DatabaseHelper.instance.insertScreenshot(dbRow);
+          
+          final newCard = {
+            'id': dbId?.toString() ?? DateTime.now().toString(),
+            'categoryId': categoryId,
+            'subCategoryId': categoryId == 0 ? subCategoryId : 0, 
+            'title': itemTitle,
+            'content': itemContent,
+            'extraInfo': itemExtraInfo,
+            'imagePath': finalImagePath, 
+          };
+          ref.read(savedCardsProvider.notifier).update((state) => [newCard, ...state]);
+        }
+      } else {
+        final dbRow = {
+          'type': indexToType[categoryId] ?? 'MEMO',
+          'confidence': 1.0, 
+          'fields': jsonEncode({
+            if (aiFields != null) ...aiFields,
+            'title': title,
+            'content': content,
+            'extraInfo': extraInfo,
+            'categoryId': categoryId,
+            'subCategoryId': categoryId == 0 ? subCategoryId : 0,
+          }),
+          'image_path': finalImagePath,
+          'status': 'CONFIRMED' 
+        };
+        
+        final dbId = await DatabaseHelper.instance.insertScreenshot(dbRow);
+        
+        final newCard = {
+          'id': dbId?.toString() ?? DateTime.now().toString(),
+          'categoryId': categoryId,
+          'subCategoryId': categoryId == 0 ? subCategoryId : 0, 
           'title': title,
           'content': content,
           'extraInfo': extraInfo,
-          'categoryId': categoryId,
-          'subCategoryId': categoryId == 0 ? subCategoryId : 0,
-        }),
-        'image_path': finalImagePath,
-        'status': 'CONFIRMED' // 사용자 최종 승인 완료
-      };
-      
-      dbId = await DatabaseHelper.instance.insertScreenshot(dbRow);
-      print('✅ [로컬 DB 저장 완료] 고유 ID: $dbId, 타입: ${dbRow['type']}');
+          'imagePath': finalImagePath, 
+        };
+        ref.read(savedCardsProvider.notifier).update((state) => [newCard, ...state]);
+      }
     } catch (e) {
       print('❌ [로컬 DB 저장 실패] $e');
     }
-
-    // 2. 기존 메모리 뷰어용 상태 업데이트
-    final newCard = {
-      'id': dbId?.toString() ?? DateTime.now().toString(),
-      'categoryId': categoryId,
-      'subCategoryId': categoryId == 0 ? subCategoryId : 0, 
-      'title': title,
-      'content': content,
-      'extraInfo': extraInfo,
-      'imagePath': finalImagePath, 
-    };
-
-    ref.read(savedCardsProvider.notifier).update((state) => [newCard, ...state]);
 
     final updatedImages = List<XFile>.from(images)..removeAt(activeIndex);
     ref.read(pickedImagesProvider.notifier).state = updatedImages;
