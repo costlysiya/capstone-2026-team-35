@@ -1063,6 +1063,14 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
+  bool _hasValidAiFields(Map<String, dynamic>? rawFields) {
+    if (rawFields == null || rawFields.isEmpty) return false;
+    final excludeKeys = { 'title', 'name', 'product_name', 'start_at', 'expires_at', 'address', 'price_amount', 'items', 'body', 'keep_photo', 'map_ready', 'calendar_type', 'reminder_days', 'recurrence', 'confidence', 'status', 'id', 'missing_fields', 'masked_info', 'categoryId', 'subCategoryId', 'content', 'extraInfo' };
+    final Map<String, String> fieldLabels = { 'title': '제목', 'memo': '메모', 'sub_type': '세부 분류', 'start_at': '시작일', 'expires_at': '만료일', 'location': '장소', 'barcode_number': '바코드 번호', 'name': '상호명', 'category': '카테고리', 'address': '주소', 'region': '지역', 'product_name': '상품명', 'price_amount': '가격', 'brand_or_store': '브랜드/판매처', 'option': '옵션', 'url': '상품 링크', 'body': '본문', 'tags': '태그', 'original_price': '정가', 'discount_rate': '할인율', 'rating': '평점', 'hours': '영업시간', 'seller': '판매처', 'description': '설명', 'exchange_place': '교환처' };
+    
+    return rawFields.entries.any((entry) => !excludeKeys.contains(entry.key) && fieldLabels.containsKey(entry.key) && entry.value != null && entry.value.toString().trim().isNotEmpty);
+  }
+
   Widget _buildSavedAiFields(Map<String, dynamic> rawFields) {
     final excludeKeys = {
       'title', 'name', 'product_name',
@@ -1207,7 +1215,7 @@ class HomeScreen extends ConsumerWidget {
                         Text(card['extraInfo'], style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: cardStyle['color'])),
                         const SizedBox(height: 15),
                       ],
-                      if (card['rawFields'] != null && (card['rawFields'] as Map).isNotEmpty) ...[
+                      if (_hasValidAiFields(card['rawFields'])) ...[
                         const Text('✨ AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple, fontSize: 12)),
                         const SizedBox(height: 5),
                         _buildSavedAiFields(card['rawFields']),
