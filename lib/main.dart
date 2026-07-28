@@ -2280,6 +2280,7 @@ class DynamicFeaturesCard extends ConsumerWidget {
                   ElevatedButton.icon(
                     onPressed: currentIdx > 0
                         ? () {
+                            _syncActiveItemControllers(ref, items[currentIdx], ref.read(selectedCategoryProvider));
                             ref.read(currentItemIndexProvider.notifier).state = currentIdx - 1;
                             _updateActiveItemControllers(ref, items[currentIdx - 1], ref.read(selectedCategoryProvider));
                           }
@@ -2298,6 +2299,7 @@ class DynamicFeaturesCard extends ConsumerWidget {
                   ElevatedButton.icon(
                     onPressed: currentIdx < items.length - 1
                         ? () {
+                            _syncActiveItemControllers(ref, items[currentIdx], ref.read(selectedCategoryProvider));
                             ref.read(currentItemIndexProvider.notifier).state = currentIdx + 1;
                             _updateActiveItemControllers(ref, items[currentIdx + 1], ref.read(selectedCategoryProvider));
                           }
@@ -2370,6 +2372,15 @@ class DynamicFeaturesCard extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  void _syncActiveItemControllers(WidgetRef ref, Map<String, dynamic> item, int categoryIndex) {
+    if (categoryIndex == 1) { // PLACE
+      item['name'] = ref.read(titleControllerProvider).text;
+      item['address'] = ref.read(placeLocationProvider).text;
+    } else if (categoryIndex == 2) { // WISHLIST
+      item['product_name'] = ref.read(titleControllerProvider).text;
+    }
   }
 
   void _updateActiveItemControllers(WidgetRef ref, Map<String, dynamic> item, int categoryIndex) {
