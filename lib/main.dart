@@ -2299,25 +2299,37 @@ class DynamicFeaturesCard extends ConsumerWidget {
     if (fields == null || fields.isEmpty) return const SizedBox();
 
     final Map<String, String> fieldLabels = {
+      // ── 공통 ──
       'title': '제목',
-      'expires_at': '만료일',
+      'memo': '메모',
+      // ── SCHEDULE ──
+      'sub_type': '세부 분류',
       'start_at': '시작일',
+      'expires_at': '만료일',
+      'location': '장소',
+      'barcode_number': '바코드 번호',
+      // ── PLACE ──
       'name': '상호명',
+      'category': '카테고리',
       'address': '주소',
       'region': '지역',
+      // ── WISHLIST ──
       'product_name': '상품명',
       'price_amount': '가격',
-      'memo': '메모',
+      'brand_or_store': '브랜드/판매처',
+      'option': '옵션',
+      'url': '상품 링크',
+      // ── MEMO ──
+      'body': '본문',
+      'tags': '태그',
+      // ── 기존 호환 ──
       'original_price': '정가',
       'discount_rate': '할인율',
-      'category': '카테고리',
       'rating': '평점',
       'hours': '영업시간',
       'seller': '판매처',
-      'body': '본문',
       'description': '설명',
       'exchange_place': '교환처',
-      'sub_type': '세부 분류',
     };
 
     // 복수 항목 처리
@@ -2328,10 +2340,22 @@ class DynamicFeaturesCard extends ConsumerWidget {
 
     final activeFields = hasItems ? (items[currentIdx] as Map<String, dynamic>) : fields;
 
-    // 핵심 필드 및 시스템 내부 키 제외
+    // 상단 폼에서 이미 직접 편집 가능한 필드 + 시스템 내부 필드 제외
     final excludeKeys = {
-      'title', 'expires_at', 'start_at', 'name', 'address',
-      'product_name', 'price_amount', 'items', 'body', 'sub_type'
+      // 상단 폼에서 편집하는 핵심 필드
+      'title', 'name', 'product_name',       // 제목 칸
+      'start_at', 'expires_at',               // 일정 날짜 칸
+      'address',                              // 장소 주소 칸
+      'price_amount',                         // 가격 (위시 제목에 포함)
+      // 시스템 내부 필드 (사용자에게 보여줄 필요 없음)
+      'items', 'body',                        // 구조/원문
+      'keep_photo', 'map_ready',              // 서버 지시 플래그
+      'calendar_type', 'reminder_days',       // 캘린더 자동 설정
+      'recurrence',                           // 구독 반복 주기
+      'confidence', 'status', 'id',           // 최상위 메타
+      'missing_fields', 'masked_info',        // 서버 메타
+      'categoryId', 'subCategoryId',          // 로컬 내부 저장용
+      'content', 'extraInfo',                 // 로컬 내부 저장용
     };
 
     final entryList = activeFields.entries
@@ -2426,13 +2450,62 @@ class DynamicFeaturesCard extends ConsumerWidget {
                 itemBuilder: (context, index) {
                   final entry = entryList[index];
                   final label = fieldLabels[entry.key] ?? entry.key;
+
+                  // sub_type 코드를 한국어로 변환
+                  const subTypeLabels = {
+                    'GIFTICON': '기프티콘/쿠폰',
+                    'SUBSCRIPTION': '구독 서비스',
+                    'APPOINTMENT': '약속/미팅',
+                    'TICKET': '티켓/예약',
+                    'DEADLINE': '마감일/시험',
+                    'DELIVERY': '택배/배송',
+                  };
+
+                  // 필드별 아이콘 매핑
+                  const fieldIcons = {
+                    'sub_type': Icons.label_outline,
+                    'memo': Icons.sticky_note_2_outlined,
+                    'location': Icons.location_on_outlined,
+                    'barcode_number': Icons.qr_code,
+                    'category': Icons.category_outlined,
+                    'region': Icons.map_outlined,
+                    'brand_or_store': Icons.storefront_outlined,
+                    'option': Icons.tune,
+                    'url': Icons.link,
+                    'tags': Icons.tag,
+                    'original_price': Icons.price_change_outlined,
+                    'discount_rate': Icons.discount_outlined,
+                    'rating': Icons.star_outline,
+                    'hours': Icons.access_time,
+                    'seller': Icons.store_outlined,
+                    'description': Icons.description_outlined,
+                    'exchange_place': Icons.swap_horiz,
+                  };
+
+                  // 표시 값 계산
+                  String displayValue;
+                  if (entry.key == 'sub_type') {
+                    displayValue = subTypeLabels[entry.value.toString()] ?? entry.value.toString();
+                  } else if (entry.value is List) {
+                    displayValue = (entry.value as List).join(', ');
+                  } else {
+                    displayValue = entry.value.toString();
+                  }
+
+                  final icon = fieldIcons[entry.key];
+                  final isReadOnly = entry.key == 'sub_type';
+
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4.0),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (icon != null) ...[
+                          Icon(icon, size: 14, color: Colors.deepPurple.shade300),
+                          const SizedBox(width: 4),
+                        ],
                         SizedBox(
-                          width: 90,
+                          width: icon != null ? 72 : 90,
                           child: Text(
                             label,
                             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black54),
@@ -2440,23 +2513,28 @@ class DynamicFeaturesCard extends ConsumerWidget {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: TextFormField(
-                            key: ValueKey('${currentIdx}_${entry.key}'),
-                            initialValue: entry.value.toString(),
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              contentPadding: EdgeInsets.symmetric(vertical: 4, horizontal: 0),
-                              border: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black12)),
-                            ),
-                            onChanged: (val) {
-                              if (hasItems) {
-                                items[currentIdx][entry.key] = val;
-                              } else {
-                                fields![entry.key] = val;
-                              }
-                            },
-                          ),
+                          child: isReadOnly
+                            ? Text(
+                                displayValue,
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.deepPurple.shade400),
+                              )
+                            : TextFormField(
+                                key: ValueKey('${currentIdx}_${entry.key}'),
+                                initialValue: displayValue,
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(vertical: 4, horizontal: 0),
+                                  border: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black12)),
+                                ),
+                                onChanged: (val) {
+                                  if (hasItems) {
+                                    items[currentIdx][entry.key] = val;
+                                  } else {
+                                    fields![entry.key] = val;
+                                  }
+                                },
+                              ),
                         ),
                       ],
                     ),
