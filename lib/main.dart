@@ -198,6 +198,10 @@ final placeLocationProvider = Provider((ref) => TextEditingController());
 // 전역 데이터 보관함
 final savedCardsProvider = StateProvider<List<Map<String, dynamic>>>((ref) => []);
 
+// 장소 탭 전용 상태
+final placeRegionProvider = StateProvider<String>((ref) => '전체');
+final placeSearchProvider = StateProvider<String>((ref) => '');
+
 // 🗓️ 캘린더 관련 상태 (일정 보관함)
 final focusedDayProvider = StateProvider<DateTime>((ref) => DateTime.now());
 final selectedDayProvider = StateProvider<DateTime?>((ref) => null);
@@ -1795,6 +1799,26 @@ class HomeScreen extends ConsumerWidget {
                                       return true; // 여기서 true로 바로 반환 (서브카테고리 무시)
                                     }
 
+                                    // 장소 보관함(cat_1) 검색 및 지역 필터
+                                    if (currentMenu == 'cat_1') {
+                                      if (c['categoryId'] != targetCatId) return false;
+                                      
+                                      final searchStr = ref.watch(placeSearchProvider).toLowerCase();
+                                      final region = ref.watch(placeRegionProvider);
+                                      
+                                      if (searchStr.isNotEmpty) {
+                                        final title = (c['title'] ?? '').toString().toLowerCase();
+                                        final extra = (c['extraInfo'] ?? '').toString().toLowerCase();
+                                        if (!title.contains(searchStr) && !extra.contains(searchStr)) return false;
+                                      }
+                                      
+                                      if (region != '전체') {
+                                        final extra = (c['extraInfo'] ?? '').toString();
+                                        if (!extra.contains(region)) return false;
+                                      }
+                                      return true;
+                                    }
+
                                     // 날짜 미선택 시 평소 필터링
                                     if (targetSubCatId != null) {
                                       if (c['categoryId'] != targetCatId || c['subCategoryId'] != targetSubCatId) return false;
@@ -1874,6 +1898,51 @@ class HomeScreen extends ConsumerWidget {
                                               },
                                             ),
                                           ),
+                                        ],
+                                        if (currentMenu == 'cat_1') ...[
+                                          // 장소 검색 바
+                                          TextField(
+                                            onChanged: (val) => ref.read(placeSearchProvider.notifier).state = val,
+                                            decoration: InputDecoration(
+                                              hintText: '상호명 또는 주소로 검색',
+                                              prefixIcon: const Icon(Icons.search, color: SoseangTheme.placeColor),
+                                              filled: true,
+                                              fillColor: Colors.white,
+                                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: SoseangTheme.placeColor.withOpacity(0.5))),
+                                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: SoseangTheme.placeColor.withOpacity(0.5))),
+                                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: const BorderSide(color: SoseangTheme.placeColor, width: 2)),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 12),
+                                          // 지역 필터 칩들 (가로 스크롤)
+                                          SingleChildScrollView(
+                                            scrollDirection: Axis.horizontal,
+                                            child: Row(
+                                              children: ['전체', '서울', '부산', '대구', '인천', '광주', '대전', '울산', '경기', '강원', '충청', '전라', '경북', '경남', '제주'].map((region) {
+                                                int count = 0;
+                                                if (region == '전체') {
+                                                  count = savedCards.where((c) => c['categoryId'] == 1).length;
+                                                } else {
+                                                  count = savedCards.where((c) => c['categoryId'] == 1 && (c['extraInfo'] ?? '').toString().contains(region)).length;
+                                                }
+                                                final isSelected = ref.watch(placeRegionProvider) == region;
+                                                return Padding(
+                                                  padding: const EdgeInsets.only(right: 6),
+                                                  child: ChoiceChip(
+                                                    label: Text('$region($count)', style: TextStyle(fontSize: 12, color: isSelected ? Colors.white : SoseangTheme.placeDark)),
+                                                    selected: isSelected,
+                                                    selectedColor: SoseangTheme.placeColor,
+                                                    backgroundColor: Colors.white,
+                                                    side: BorderSide(color: SoseangTheme.placeColor.withOpacity(0.5)),
+                                                    showCheckmark: false,
+                                                    onSelected: (_) => ref.read(placeRegionProvider.notifier).state = region,
+                                                  ),
+                                                );
+                                              }).toList(),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 12),
                                         ],
                                         Row(
                                           children: [
@@ -1999,6 +2068,26 @@ class HomeScreen extends ConsumerWidget {
                                         return false; // 날짜 정보 없으면 숨김
                                       }
                                       return true; // 여기서 true로 바로 반환 (서브카테고리 무시)
+                                    }
+
+                                    // 장소 보관함(cat_1) 검색 및 지역 필터
+                                    if (currentMenu == 'cat_1') {
+                                      if (c['categoryId'] != targetCatId) return false;
+                                      
+                                      final searchStr = ref.watch(placeSearchProvider).toLowerCase();
+                                      final region = ref.watch(placeRegionProvider);
+                                      
+                                      if (searchStr.isNotEmpty) {
+                                        final title = (c['title'] ?? '').toString().toLowerCase();
+                                        final extra = (c['extraInfo'] ?? '').toString().toLowerCase();
+                                        if (!title.contains(searchStr) && !extra.contains(searchStr)) return false;
+                                      }
+                                      
+                                      if (region != '전체') {
+                                        final extra = (c['extraInfo'] ?? '').toString();
+                                        if (!extra.contains(region)) return false;
+                                      }
+                                      return true;
                                     }
 
                                     // 날짜 미선택 시 평소 필터링
