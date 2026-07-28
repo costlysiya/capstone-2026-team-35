@@ -2377,7 +2377,7 @@ class DynamicFeaturesCard extends ConsumerWidget {
     };
 
     final entryList = activeFields.entries
-        .where((entry) => !excludeKeys.contains(entry.key) && entry.value != null && entry.value.toString().trim().isNotEmpty)
+        .where((entry) => !excludeKeys.contains(entry.key) && fieldLabels.containsKey(entry.key) && entry.value != null && entry.value.toString().trim().isNotEmpty)
         .toList();
 
     return Card(
