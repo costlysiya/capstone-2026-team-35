@@ -1221,13 +1221,33 @@ class HomeScreen extends ConsumerWidget {
                         children: [
                           Expanded(
                             child: OutlinedButton(
-                              onPressed: () {
-                                final titleCtrl = TextEditingController(text: card['title']);
-                                final extraCtrl = TextEditingController(text: card['extraInfo']);
-                                final contentCtrl = TextEditingController(text: card['content']);
-                                int editCatId = card['categoryId'] ?? 3;
-                                
-                                showDialog(
+                                onPressed: () {
+                                  final titleCtrl = TextEditingController(text: card['title']);
+                                  final extraCtrl = TextEditingController(text: card['extraInfo']);
+                                  final contentCtrl = TextEditingController(text: card['content']);
+                                  int editCatId = card['categoryId'] ?? 3;
+                                  
+                                  final Map<String, TextEditingController> aiFieldCtrls = {};
+                                  final Map<String, String> fieldLabels = {
+                                    'title': '제목', 'memo': '메모',
+                                    'sub_type': '세부 분류', 'start_at': '시작일', 'expires_at': '만료일',
+                                    'location': '장소', 'barcode_number': '바코드 번호',
+                                    'name': '상호명', 'category': '카테고리', 'address': '주소', 'region': '지역',
+                                    'product_name': '상품명', 'price_amount': '가격', 'brand_or_store': '브랜드/판매처', 'option': '옵션', 'url': '상품 링크',
+                                    'body': '본문', 'tags': '태그',
+                                    'original_price': '정가', 'discount_rate': '할인율', 'rating': '평점', 'hours': '영업시간', 'seller': '판매처', 'description': '설명', 'exchange_place': '교환처',
+                                  };
+                                  final excludeKeys = { 'title', 'name', 'product_name', 'start_at', 'expires_at', 'address', 'price_amount', 'items', 'body', 'keep_photo', 'map_ready', 'calendar_type', 'reminder_days', 'recurrence', 'confidence', 'status', 'id', 'missing_fields', 'masked_info', 'categoryId', 'subCategoryId', 'content', 'extraInfo' };
+
+                                  if (card['rawFields'] != null && (card['rawFields'] as Map).isNotEmpty) {
+                                    for (var entry in (card['rawFields'] as Map).entries) {
+                                      if (!excludeKeys.contains(entry.key) && fieldLabels.containsKey(entry.key) && entry.value != null && entry.value.toString().trim().isNotEmpty) {
+                                        aiFieldCtrls[entry.key] = TextEditingController(text: entry.value.toString());
+                                      }
+                                    }
+                                  }
+                                  
+                                  showDialog(
                                   context: context,
                                   builder: (ctx) => StatefulBuilder(
                                     builder: (context, setState) {
@@ -1279,17 +1299,32 @@ class HomeScreen extends ConsumerWidget {
                                                 else
                                                   TextField(controller: extraCtrl, decoration: const InputDecoration(labelText: '추가 정보')),
                                                 const SizedBox(height: 10),
-                                                if (card['rawFields'] != null && (card['rawFields'] as Map).isNotEmpty) ...[
+                                                if (aiFieldCtrls.isNotEmpty) ...[
                                                   const Align(
                                                     alignment: Alignment.centerLeft,
-                                                    child: Text('✨ AI 추출 상세 정보 (편집 불가)', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple, fontSize: 12)),
+                                                    child: Text('✨ AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple, fontSize: 12)),
                                                   ),
                                                   const SizedBox(height: 5),
                                                   Container(
                                                     width: double.infinity,
                                                     padding: const EdgeInsets.all(10),
                                                     decoration: BoxDecoration(color: Colors.black.withOpacity(0.03), borderRadius: BorderRadius.circular(8)),
-                                                    child: _buildSavedAiFields(card['rawFields']),
+                                                    child: Column(
+                                                      children: aiFieldCtrls.entries.map((e) {
+                                                        final label = fieldLabels[e.key] ?? e.key;
+                                                        return Padding(
+                                                          padding: const EdgeInsets.only(bottom: 8.0),
+                                                          child: TextField(
+                                                            controller: e.value,
+                                                            decoration: InputDecoration(
+                                                              labelText: label,
+                                                              isDense: true,
+                                                            ),
+                                                            style: const TextStyle(fontSize: 13),
+                                                          ),
+                                                        );
+                                                      }).toList(),
+                                                    ),
                                                   ),
                                                 ] else
                                                   TextField(controller: contentCtrl, maxLines: 5, decoration: const InputDecoration(labelText: '추출 본문')),
@@ -1301,7 +1336,16 @@ class HomeScreen extends ConsumerWidget {
                                           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
                                           TextButton(
                                             onPressed: () async {
+                                              Map<String, dynamic> updatedRawFields = {};
+                                              if (card['rawFields'] != null) {
+                                                updatedRawFields = Map<String, dynamic>.from(card['rawFields']);
+                                                for (var entry in aiFieldCtrls.entries) {
+                                                  updatedRawFields[entry.key] = entry.value.text;
+                                                }
+                                              }
+
                                               final newFields = jsonEncode({
+                                                if (updatedRawFields.isNotEmpty) ...updatedRawFields,
                                                 'title': titleCtrl.text,
                                                 'content': contentCtrl.text,
                                                 'extraInfo': extraCtrl.text,
@@ -1322,6 +1366,7 @@ class HomeScreen extends ConsumerWidget {
                                                       'extraInfo': extraCtrl.text,
                                                       'categoryId': editCatId,
                                                       'type': typeStr,
+                                                      'rawFields': updatedRawFields.isNotEmpty ? updatedRawFields : c['rawFields'],
                                                     };
                                                   }
                                                   return c;
