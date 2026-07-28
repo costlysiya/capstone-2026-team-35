@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException
-from app.schemas import AnalyzeRequest, AnalyzeResponse, BatchAnalyzeRequest, BatchAnalyzeResponse
+from fastapi import APIRouter, HTTPException, BackgroundTasks
+from app.schemas import AnalyzeRequest, AnalyzeResponse, BatchAnalyzeRequest, BatchAnalyzeResponse, BatchAsyncResponse, BatchStatusResponse
 from app.prompts import get_system_prompt, CLASSIFY_PROMPT, get_type_prompt
 from app.validator import validate_result
 from app.database import save_result, get_result_by_hash
@@ -9,9 +9,14 @@ import json
 import logging
 import re
 
+import uuid
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["분석"])
+
+# 인메모리 작업 상태 저장소 (실무에서는 Redis나 DB 활용 권장)
+_task_store: dict[str, dict] = {}
 
 
 def _extract_fields(raw: dict) -> dict:
@@ -247,4 +252,91 @@ def analyze_batch(request: BatchAnalyzeRequest):
         failed=len(errors),
         results=results,
         errors=errors
+    )
+
+
+def _process_batch_background(task_id: str, request: BatchAnalyzeRequest):
+    """백그라운드에서 배치 항목을 순차 분석하고 상태를 업데이트하는 워커"""
+    try:
+        _task_store[task_id]["status"] = "PROCESSING"
+        
+        for idx, item in enumerate(request.items):
+            # 중간에 상태 확인 (에러 발생 등으로 강제 종료될 경우를 대비)
+            if _task_store[task_id]["status"] == "ERROR":
+                break
+
+            try:
+                logger.info(f"[async_batch] {task_id} - 항목 {idx+1}/{len(request.items)} 처리 중...")
+                response = analyze_v2(item)
+                _task_store[task_id]["results"].append(response)
+                _task_store[task_id]["completed"] += 1
+            except Exception as e:
+                logger.error(f"[async_batch] {task_id} - 항목 {idx} 실패: {e}")
+                _task_store[task_id]["errors"].append({"index": idx, "error": str(e)})
+                _task_store[task_id]["failed"] += 1
+        
+        _task_store[task_id]["status"] = "COMPLETED"
+    
+    except Exception as e:
+        logger.error(f"[async_batch] {task_id} - 전체 프로세스 실패: {e}")
+        _task_store[task_id]["status"] = "ERROR"
+        _task_store[task_id]["errors"].append({"index": -1, "error": f"백그라운드 작업 중단됨: {str(e)}"})
+
+
+@router.post("/analyze/batch/async", response_model=BatchAsyncResponse, status_code=202)
+def analyze_batch_async(request: BatchAnalyzeRequest, background_tasks: BackgroundTasks):
+    """
+    [비동기 큐] 복수 이미지를 접수하고 즉시 반환.
+    백그라운드에서 순차적으로 분석을 진행합니다.
+    """
+    if len(request.items) > 20:
+        raise HTTPException(
+            status_code=400,
+            detail="배치 요청은 최대 20개까지 가능합니다"
+        )
+    if len(request.items) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="분석할 항목이 없습니다"
+        )
+
+    task_id = str(uuid.uuid4())
+    
+    # 딕셔너리에 상태 초기화 등록
+    _task_store[task_id] = {
+        "status": "PENDING",
+        "total": len(request.items),
+        "completed": 0,
+        "failed": 0,
+        "results": [],
+        "errors": []
+    }
+
+    # 백그라운드 태스크 등록
+    background_tasks.add_task(_process_batch_background, task_id, request)
+
+    logger.info(f"[async_batch] 비동기 작업 접수 완료: {task_id} (총 {len(request.items)}건)")
+    
+    return BatchAsyncResponse(task_id=task_id)
+
+
+@router.get("/tasks/{task_id}/status", response_model=BatchStatusResponse)
+def get_task_status(task_id: str):
+    """
+    진행 중인 비동기 배치 작업의 상태를 조회합니다.
+    (Polling 방식으로 호출)
+    """
+    if task_id not in _task_store:
+        raise HTTPException(status_code=404, detail="존재하지 않거나 만료된 작업입니다.")
+    
+    task_data = _task_store[task_id]
+    
+    return BatchStatusResponse(
+        task_id=task_id,
+        status=task_data["status"],
+        total=task_data["total"],
+        completed=task_data["completed"],
+        failed=task_data["failed"],
+        results=task_data["results"],
+        errors=task_data["errors"]
     )

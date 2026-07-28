@@ -70,3 +70,19 @@ class BatchAnalyzeResponse(BaseModel):
     failed: int
     results: list[AnalyzeResponse]
     errors: list[dict] = []
+
+class BatchAsyncResponse(BaseModel):
+    """비동기 배치 분석 접수 응답"""
+    task_id: str
+    status: str = "PENDING"
+    message: str = "배치 작업이 백그라운드 큐에 등록되었습니다."
+
+class BatchStatusResponse(BaseModel):
+    """비동기 배치 작업 상태 응답"""
+    task_id: str
+    status: str  # PENDING, PROCESSING, COMPLETED, ERROR
+    total: int
+    completed: int
+    failed: int
+    results: list[AnalyzeResponse] = []
+    errors: list[dict] = []
