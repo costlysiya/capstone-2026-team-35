@@ -1479,6 +1479,23 @@ class HomeScreen extends ConsumerWidget {
     final drafts = ref.watch(draftCacheProvider);
     final progressText = ref.watch(queueProgressProvider);
 
+    List<String> missingFields = [];
+    if (pickedImages.isNotEmpty && activeIndex < pickedImages.length) {
+      final activePath = pickedImages[activeIndex].path;
+      final draft = drafts[activePath];
+      final fields = draft?.aiFields;
+      if (fields != null) {
+        final hasItems = fields.containsKey('items') && fields['items'] is List && (fields['items'] as List).isNotEmpty;
+        final List<dynamic> items = hasItems ? (fields['items'] as List) : [];
+        final currentItemIndex = ref.watch(currentItemIndexProvider);
+        final currentIdx = currentItemIndex >= items.length ? 0 : currentItemIndex;
+        final activeFields = hasItems ? (items[currentIdx] as Map<String, dynamic>) : fields;
+        if (activeFields['missing_fields'] is List) {
+           missingFields = List<String>.from(activeFields['missing_fields']);
+        }
+      }
+    }
+
     final titleController = ref.watch(titleControllerProvider);
     final contentController = ref.watch(contentControllerProvider);
     final scheduleDateController = ref.watch(scheduleDateProvider);
@@ -1832,7 +1849,7 @@ class HomeScreen extends ConsumerWidget {
                                           const SizedBox(height: 15),
                                           Builder(
                                             builder: (context) {
-                                              final isHighlighted = ocrStatus == 'success' && titleController.text.trim().isEmpty;
+                                              final isHighlighted = (ocrStatus == 'success' && titleController.text.trim().isEmpty) || missingFields.contains('title') || missingFields.contains('name') || missingFields.contains('product_name');
                                               return TextField(
                                                 controller: titleController,
                                                 onChanged: (_) => (context as Element).markNeedsBuild(),
@@ -1857,7 +1874,7 @@ class HomeScreen extends ConsumerWidget {
                                           if (selectedCategory == 0) ...[
                                             Builder(
                                               builder: (context) {
-                                                final isHighlighted = ocrStatus == 'success' && scheduleDateController.text.trim().isEmpty;
+                                                final isHighlighted = (ocrStatus == 'success' && scheduleDateController.text.trim().isEmpty) || missingFields.contains('start_at') || missingFields.contains('expires_at');
                                                 return TextField(
                                                   controller: scheduleDateController,
                                                   readOnly: true,
@@ -1896,7 +1913,7 @@ class HomeScreen extends ConsumerWidget {
                                           if (selectedCategory == 1) ...[
                                             Builder(
                                               builder: (context) {
-                                                final isHighlighted = ocrStatus == 'success' && placeLocationController.text.trim().isEmpty;
+                                                final isHighlighted = (ocrStatus == 'success' && placeLocationController.text.trim().isEmpty) || missingFields.contains('address');
                                                 return TextField(
                                                   controller: placeLocationController,
                                                   onChanged: (_) => (context as Element).markNeedsBuild(),
