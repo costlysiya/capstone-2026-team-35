@@ -1632,8 +1632,26 @@ class HomeScreen extends ConsumerWidget {
                                   height: 80,
                                   child: ListView.builder(
                                     scrollDirection: Axis.horizontal,
-                                    itemCount: pickedImages.length,
+                                    itemCount: pickedImages.length + 1,
                                     itemBuilder: (context, index) {
+                                      if (index == pickedImages.length) {
+                                        return GestureDetector(
+                                          onTap: () => _pickMultiImages(ref),
+                                          child: Container(
+                                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                                            width: 65,
+                                            decoration: BoxDecoration(
+                                              borderRadius: BorderRadius.circular(10),
+                                              border: Border.all(color: SoseangTheme.border, width: 2),
+                                              color: SoseangTheme.cream.withValues(alpha: 0.5),
+                                            ),
+                                            child: const Center(
+                                              child: Icon(Icons.add, color: SoseangTheme.textMuted, size: 28),
+                                            ),
+                                          ),
+                                        );
+                                      }
+
                                       bool isActive = index == activeIndex;
                                       final imgPath = pickedImages[index].path;
                                       final draft = drafts[imgPath];
