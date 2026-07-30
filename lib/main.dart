@@ -474,20 +474,34 @@ class HomeScreen extends ConsumerWidget {
     }
   }
 
-  // 갤러리에서 대량 가져오기 (최대 50장)
+  // 갤러리에서 대량 가져오기 (대기열 최대 20장)
   Future<void> _pickMultiImages(WidgetRef ref) async {
     final ImagePicker picker = ImagePicker();
-    final List<XFile> images = await picker.pickMultiImage();
+    final List<XFile> newImages = await picker.pickMultiImage();
     
-    if (images.isNotEmpty) {
-      final selectedList = images.take(50).toList();
-      ref.read(pickedImagesProvider.notifier).state = selectedList;
-      ref.read(activeImageIndexProvider.notifier).state = 0;
-      ref.read(draftCacheProvider.notifier).state = {};
-      ref.read(ocrStatusProvider.notifier).state = 'idle';
-      _clearAllFields(ref);
+    if (newImages.isNotEmpty) {
+      final currentList = ref.read(pickedImagesProvider);
+      final int availableSlots = 20 - currentList.length;
+      
+      if (availableSlots <= 0) {
+        // 이미 20장이 꽉 찼으면 추가 안 함 (선택적: SnackBar 등으로 알림 가능)
+        return;
+      }
 
-      _startBackgroundBatchProcessing(ref, selectedList);
+      final addedList = newImages.take(availableSlots).toList();
+      final updatedList = [...currentList, ...addedList];
+      
+      ref.read(pickedImagesProvider.notifier).state = updatedList;
+      
+      // 만약 기존에 하나도 없었다면 첫번째로 활성화
+      if (currentList.isEmpty) {
+        ref.read(activeImageIndexProvider.notifier).state = 0;
+        ref.read(ocrStatusProvider.notifier).state = 'idle';
+        _clearAllFields(ref);
+      }
+
+      // 새로 추가된 사진들에 대해서만 백그라운드 처리 시작
+      _startBackgroundBatchProcessing(ref, addedList);
     }
   }
 
