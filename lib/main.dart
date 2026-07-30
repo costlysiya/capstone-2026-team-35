@@ -2659,9 +2659,34 @@ class DynamicFeaturesCard extends ConsumerWidget {
       'content', 'extraInfo',                 // 로컬 내부 저장용
     };
 
+    final categoryId = ref.watch(selectedCategoryProvider);
+    final subCategoryId = ref.watch(selectedSubCategoryProvider);
+    
     final List<String> missingFieldsList = [];
     if (activeFields['missing_fields'] is List) {
       missingFieldsList.addAll(List<String>.from(activeFields['missing_fields']));
+    }
+
+    // 각 카테고리별 예상 필드 (서버 응답에 없어도 빈 폼으로 강제 노출)
+    List<String> expectedKeys = [];
+    if (categoryId == 0) {
+      if (subCategoryId == 1) {
+        expectedKeys = ['exchange_place', 'barcode_number', 'memo'];
+      } else {
+        expectedKeys = ['location', 'memo'];
+      }
+    } else if (categoryId == 1) {
+      expectedKeys = ['category', 'region', 'hours', 'memo'];
+    } else if (categoryId == 2) {
+      expectedKeys = ['brand_or_store', 'option', 'url', 'original_price', 'discount_rate', 'rating', 'memo'];
+    } else if (categoryId == 3) {
+      expectedKeys = ['tags', 'memo'];
+    }
+
+    for (final key in expectedKeys) {
+      if (!missingFieldsList.contains(key)) {
+        missingFieldsList.add(key);
+      }
     }
 
     final entryList = <MapEntry<String, dynamic>>[];
