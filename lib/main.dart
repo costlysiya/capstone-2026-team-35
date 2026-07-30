@@ -2659,57 +2659,9 @@ class DynamicFeaturesCard extends ConsumerWidget {
       'content', 'extraInfo',                 // 로컬 내부 저장용
     };
 
-    final categoryId = ref.watch(selectedCategoryProvider);
-    final subCategoryId = ref.watch(selectedSubCategoryProvider);
-    
-    final List<String> missingFieldsList = [];
-    if (activeFields['missing_fields'] is List) {
-      missingFieldsList.addAll(List<String>.from(activeFields['missing_fields']));
-    }
-
-    // 각 카테고리별 예상 필드 (서버 응답에 없어도 빈 폼으로 강제 노출)
-    List<String> expectedKeys = [];
-    if (categoryId == 0) {
-      if (subCategoryId == 1) {
-        expectedKeys = ['exchange_place', 'barcode_number', 'memo'];
-      } else {
-        expectedKeys = ['location', 'memo'];
-      }
-    } else if (categoryId == 1) {
-      expectedKeys = ['category', 'region', 'hours', 'memo'];
-    } else if (categoryId == 2) {
-      expectedKeys = ['brand_or_store', 'option', 'url', 'original_price', 'discount_rate', 'rating', 'memo'];
-    } else if (categoryId == 3) {
-      expectedKeys = ['tags', 'memo'];
-    }
-
-    for (final key in expectedKeys) {
-      if (!missingFieldsList.contains(key)) {
-        missingFieldsList.add(key);
-      }
-    }
-
-    final entryList = <MapEntry<String, dynamic>>[];
-    
-    // 1. activeFields에 존재하는 키들 중 값이 있거나 missing_fields에 있는 경우
-    for (final entry in activeFields.entries) {
-      if (excludeKeys.contains(entry.key) || !fieldLabels.containsKey(entry.key)) continue;
-      
-      final bool hasValue = entry.value != null && entry.value.toString().trim().isNotEmpty;
-      final bool isMissing = missingFieldsList.contains(entry.key);
-      
-      if (hasValue || isMissing) {
-        entryList.add(entry);
-      }
-    }
-    
-    // 2. activeFields에 아예 없지만 missing_fields에 명시된 키들도 추가
-    for (final missingKey in missingFieldsList) {
-      if (excludeKeys.contains(missingKey) || !fieldLabels.containsKey(missingKey)) continue;
-      if (!activeFields.containsKey(missingKey)) {
-        entryList.add(MapEntry(missingKey, ''));
-      }
-    }
+    final entryList = activeFields.entries
+        .where((entry) => !excludeKeys.contains(entry.key) && fieldLabels.containsKey(entry.key) && entry.value != null && entry.value.toString().trim().isNotEmpty)
+        .toList();
 
     return Card(
       elevation: 1,
@@ -2838,7 +2790,7 @@ class DynamicFeaturesCard extends ConsumerWidget {
                   } else if (entry.value is List) {
                     displayValue = (entry.value as List).join(', ');
                   } else {
-                    displayValue = entry.value != null ? entry.value.toString() : '';
+                    displayValue = entry.value.toString();
                   }
 
                   final icon = fieldIcons[entry.key];
@@ -2875,8 +2827,6 @@ class DynamicFeaturesCard extends ConsumerWidget {
                                   isDense: true,
                                   contentPadding: EdgeInsets.symmetric(vertical: 4, horizontal: 0),
                                   border: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black12)),
-                                  hintText: '직접 입력하기',
-                                  hintStyle: TextStyle(color: Colors.black26, fontSize: 12, fontWeight: FontWeight.normal),
                                 ),
                                 onChanged: (val) {
                                   if (hasItems) {
