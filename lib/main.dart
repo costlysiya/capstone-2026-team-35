@@ -2659,9 +2659,32 @@ class DynamicFeaturesCard extends ConsumerWidget {
       'content', 'extraInfo',                 // 로컬 내부 저장용
     };
 
-    final entryList = activeFields.entries
-        .where((entry) => !excludeKeys.contains(entry.key) && fieldLabels.containsKey(entry.key) && entry.value != null && entry.value.toString().trim().isNotEmpty)
-        .toList();
+    final List<String> missingFieldsList = [];
+    if (activeFields['missing_fields'] is List) {
+      missingFieldsList.addAll(List<String>.from(activeFields['missing_fields']));
+    }
+
+    final entryList = <MapEntry<String, dynamic>>[];
+    
+    // 1. activeFields에 존재하는 키들 중 값이 있거나 missing_fields에 있는 경우
+    for (final entry in activeFields.entries) {
+      if (excludeKeys.contains(entry.key) || !fieldLabels.containsKey(entry.key)) continue;
+      
+      final bool hasValue = entry.value != null && entry.value.toString().trim().isNotEmpty;
+      final bool isMissing = missingFieldsList.contains(entry.key);
+      
+      if (hasValue || isMissing) {
+        entryList.add(entry);
+      }
+    }
+    
+    // 2. activeFields에 아예 없지만 missing_fields에 명시된 키들도 추가
+    for (final missingKey in missingFieldsList) {
+      if (excludeKeys.contains(missingKey) || !fieldLabels.containsKey(missingKey)) continue;
+      if (!activeFields.containsKey(missingKey)) {
+        entryList.add(MapEntry(missingKey, ''));
+      }
+    }
 
     return Card(
       elevation: 1,
@@ -2790,7 +2813,7 @@ class DynamicFeaturesCard extends ConsumerWidget {
                   } else if (entry.value is List) {
                     displayValue = (entry.value as List).join(', ');
                   } else {
-                    displayValue = entry.value.toString();
+                    displayValue = entry.value != null ? entry.value.toString() : '';
                   }
 
                   final icon = fieldIcons[entry.key];
@@ -2827,6 +2850,8 @@ class DynamicFeaturesCard extends ConsumerWidget {
                                   isDense: true,
                                   contentPadding: EdgeInsets.symmetric(vertical: 4, horizontal: 0),
                                   border: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black12)),
+                                  hintText: '직접 입력하기',
+                                  hintStyle: TextStyle(color: Colors.black26, fontSize: 12, fontWeight: FontWeight.normal),
                                 ),
                                 onChanged: (val) {
                                   if (hasItems) {
