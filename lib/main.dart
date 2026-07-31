@@ -82,6 +82,7 @@ void main() async {
     String extraInfo = '';
     int subCategoryId = 0;
     
+    Map<String, dynamic>? rawFields;
     try {
       if (row['fields'] != null && row['fields'].toString().startsWith('{')) {
         final parsed = jsonDecode(row['fields']);
@@ -89,6 +90,7 @@ void main() async {
         content = parsed['content'] ?? content;
         extraInfo = parsed['extraInfo'] ?? extraInfo;
         subCategoryId = parsed['subCategoryId'] ?? 0;
+        rawFields = parsed;
       }
     } catch(e) {}
 
@@ -100,6 +102,7 @@ void main() async {
       'content': content,
       'extraInfo': extraInfo,
       'imagePath': row['image_path'],
+      'rawFields': rawFields,
     };
   }).toList();
 
@@ -471,20 +474,34 @@ class HomeScreen extends ConsumerWidget {
     }
   }
 
-  // 갤러리에서 대량 가져오기 (최대 50장)
+  // 갤러리에서 대량 가져오기 (대기열 최대 20장)
   Future<void> _pickMultiImages(WidgetRef ref) async {
     final ImagePicker picker = ImagePicker();
-    final List<XFile> images = await picker.pickMultiImage();
+    final List<XFile> newImages = await picker.pickMultiImage();
     
-    if (images.isNotEmpty) {
-      final selectedList = images.take(50).toList();
-      ref.read(pickedImagesProvider.notifier).state = selectedList;
-      ref.read(activeImageIndexProvider.notifier).state = 0;
-      ref.read(draftCacheProvider.notifier).state = {};
-      ref.read(ocrStatusProvider.notifier).state = 'idle';
-      _clearAllFields(ref);
+    if (newImages.isNotEmpty) {
+      final currentList = ref.read(pickedImagesProvider);
+      final int availableSlots = 20 - currentList.length;
+      
+      if (availableSlots <= 0) {
+        // 이미 20장이 꽉 찼으면 추가 안 함 (선택적: SnackBar 등으로 알림 가능)
+        return;
+      }
 
-      _startBackgroundBatchProcessing(ref, selectedList);
+      final addedList = newImages.take(availableSlots).toList();
+      final updatedList = [...currentList, ...addedList];
+      
+      ref.read(pickedImagesProvider.notifier).state = updatedList;
+      
+      // 만약 기존에 하나도 없었다면 첫번째로 활성화
+      if (currentList.isEmpty) {
+        ref.read(activeImageIndexProvider.notifier).state = 0;
+        ref.read(ocrStatusProvider.notifier).state = 'idle';
+        _clearAllFields(ref);
+      }
+
+      // 새로 추가된 사진들에 대해서만 백그라운드 처리 시작
+      _startBackgroundBatchProcessing(ref, addedList);
     }
   }
 
@@ -838,6 +855,28 @@ class HomeScreen extends ConsumerWidget {
       return;
     }
 
+    // 강조된 빈 필드 확인 (AI 분석 완료 후 필수 필드 검증)
+    final ocrStatus = ref.read(ocrStatusProvider);
+    if (ocrStatus == 'success') {
+      final List<String> emptyFields = [];
+      if (categoryId == 0 && ref.read(scheduleDateProvider).text.trim().isEmpty) {
+        emptyFields.add('일정 날짜');
+      }
+      if (categoryId == 1 && ref.read(placeLocationProvider).text.trim().isEmpty) {
+        emptyFields.add('장소 위치/주소');
+      }
+      if (emptyFields.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠️ 비워진 필드를 먼저 입력해 주세요: ${emptyFields.join(', ')}'),
+            backgroundColor: Colors.redAccent,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+    }
+
     String extraInfo = "";
     if (categoryId == 0) extraInfo = ref.read(scheduleDateProvider).text;
     if (categoryId == 1) extraInfo = ref.read(placeLocationProvider).text;
@@ -917,6 +956,14 @@ class HomeScreen extends ConsumerWidget {
             'content': itemContent,
             'extraInfo': itemExtraInfo,
             'imagePath': finalImagePath, 
+            'rawFields': {
+              ...item,
+              'title': itemTitle,
+              'content': itemContent,
+              'extraInfo': itemExtraInfo,
+              'categoryId': categoryId,
+              'subCategoryId': categoryId == 0 ? subCategoryId : 0,
+            },
           };
           ref.read(savedCardsProvider.notifier).update((state) => [newCard, ...state]);
         }
@@ -946,6 +993,14 @@ class HomeScreen extends ConsumerWidget {
           'content': content,
           'extraInfo': extraInfo,
           'imagePath': finalImagePath, 
+          'rawFields': {
+            if (aiFields != null) ...aiFields,
+            'title': title,
+            'content': content,
+            'extraInfo': extraInfo,
+            'categoryId': categoryId,
+            'subCategoryId': categoryId == 0 ? subCategoryId : 0,
+          },
         };
         ref.read(savedCardsProvider.notifier).update((state) => [newCard, ...state]);
       }
@@ -1023,6 +1078,68 @@ class HomeScreen extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+
+  bool _hasValidAiFields(Map<String, dynamic>? rawFields) {
+    if (rawFields == null || rawFields.isEmpty) return false;
+    final excludeKeys = { 'title', 'name', 'product_name', 'start_at', 'expires_at', 'address', 'price_amount', 'items', 'body', 'keep_photo', 'map_ready', 'calendar_type', 'reminder_days', 'recurrence', 'confidence', 'status', 'id', 'missing_fields', 'masked_info', 'categoryId', 'subCategoryId', 'content', 'extraInfo' };
+    final Map<String, String> fieldLabels = { 'title': '제목', 'memo': '메모', 'sub_type': '세부 분류', 'start_at': '시작일', 'expires_at': '만료일', 'location': '장소', 'barcode_number': '바코드 번호', 'name': '상호명', 'category': '카테고리', 'address': '주소', 'region': '지역', 'product_name': '상품명', 'price_amount': '가격', 'brand_or_store': '브랜드/판매처', 'option': '옵션', 'url': '상품 링크', 'body': '본문', 'tags': '태그', 'original_price': '정가', 'discount_rate': '할인율', 'rating': '평점', 'hours': '영업시간', 'seller': '판매처', 'description': '설명', 'exchange_place': '교환처' };
+    
+    return rawFields.entries.any((entry) => !excludeKeys.contains(entry.key) && fieldLabels.containsKey(entry.key) && entry.value != null && entry.value.toString().trim().isNotEmpty);
+  }
+
+  Widget _buildSavedAiFields(Map<String, dynamic> rawFields) {
+    final excludeKeys = {
+      'title', 'name', 'product_name',
+      'start_at', 'expires_at',
+      'address', 'price_amount',
+      'items', 'body',
+      'keep_photo', 'map_ready',
+      'calendar_type', 'reminder_days',
+      'recurrence',
+      'confidence', 'status', 'id',
+      'missing_fields', 'masked_info',
+      'categoryId', 'subCategoryId',
+      'content', 'extraInfo',
+    };
+
+    final Map<String, String> fieldLabels = {
+      'title': '제목', 'memo': '메모',
+      'sub_type': '세부 분류', 'start_at': '시작일', 'expires_at': '만료일',
+      'location': '장소', 'barcode_number': '바코드 번호',
+      'name': '상호명', 'category': '카테고리', 'address': '주소', 'region': '지역',
+      'product_name': '상품명', 'price_amount': '가격', 'brand_or_store': '브랜드/판매처', 'option': '옵션', 'url': '상품 링크',
+      'body': '본문', 'tags': '태그',
+      'original_price': '정가', 'discount_rate': '할인율', 'rating': '평점', 'hours': '영업시간', 'seller': '판매처', 'description': '설명', 'exchange_place': '교환처',
+    };
+
+    final entryList = rawFields.entries
+        .where((entry) => !excludeKeys.contains(entry.key) && fieldLabels.containsKey(entry.key) && entry.value != null && entry.value.toString().trim().isNotEmpty)
+        .toList();
+
+    if (entryList.isEmpty) return const SizedBox();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: entryList.map((entry) {
+        final label = fieldLabels[entry.key] ?? entry.key;
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4.0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 80,
+                child: Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.bold)),
+              ),
+              Expanded(
+                child: Text(entry.value.toString(), style: const TextStyle(fontSize: 13, color: Colors.black87)),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -1116,21 +1233,47 @@ class HomeScreen extends ConsumerWidget {
                         Text(card['extraInfo'], style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: cardStyle['color'])),
                         const SizedBox(height: 15),
                       ],
-                      const Text('📝 추출 상세 본문', style: TextStyle(fontWeight: FontWeight.bold, color: SoseangTheme.textMuted, fontSize: 12)),
-                      const SizedBox(height: 5),
-                      Text(card['content'], style: const TextStyle(fontSize: 14, height: 1.4, color: SoseangTheme.textDark)),
+                      if (_hasValidAiFields(card['rawFields'])) ...[
+                        const Text('✨ AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple, fontSize: 12)),
+                        const SizedBox(height: 5),
+                        _buildSavedAiFields(card['rawFields']),
+                      ] else ...[
+                        const Text('📝 추출 상세 본문', style: TextStyle(fontWeight: FontWeight.bold, color: SoseangTheme.textMuted, fontSize: 12)),
+                        const SizedBox(height: 5),
+                        Text(card['content'], style: const TextStyle(fontSize: 14, height: 1.4, color: SoseangTheme.textDark)),
+                      ],
                       const SizedBox(height: 25),
                       Row(
                         children: [
                           Expanded(
                             child: OutlinedButton(
-                              onPressed: () {
-                                final titleCtrl = TextEditingController(text: card['title']);
-                                final extraCtrl = TextEditingController(text: card['extraInfo']);
-                                final contentCtrl = TextEditingController(text: card['content']);
-                                int editCatId = card['categoryId'] ?? 3;
-                                
-                                showDialog(
+                                onPressed: () {
+                                  final titleCtrl = TextEditingController(text: card['title']);
+                                  final extraCtrl = TextEditingController(text: card['extraInfo']);
+                                  final contentCtrl = TextEditingController(text: card['content']);
+                                  int editCatId = card['categoryId'] ?? 3;
+                                  
+                                  final Map<String, TextEditingController> aiFieldCtrls = {};
+                                  final Map<String, String> fieldLabels = {
+                                    'title': '제목', 'memo': '메모',
+                                    'sub_type': '세부 분류', 'start_at': '시작일', 'expires_at': '만료일',
+                                    'location': '장소', 'barcode_number': '바코드 번호',
+                                    'name': '상호명', 'category': '카테고리', 'address': '주소', 'region': '지역',
+                                    'product_name': '상품명', 'price_amount': '가격', 'brand_or_store': '브랜드/판매처', 'option': '옵션', 'url': '상품 링크',
+                                    'body': '본문', 'tags': '태그',
+                                    'original_price': '정가', 'discount_rate': '할인율', 'rating': '평점', 'hours': '영업시간', 'seller': '판매처', 'description': '설명', 'exchange_place': '교환처',
+                                  };
+                                  final excludeKeys = { 'title', 'name', 'product_name', 'start_at', 'expires_at', 'address', 'price_amount', 'items', 'body', 'keep_photo', 'map_ready', 'calendar_type', 'reminder_days', 'recurrence', 'confidence', 'status', 'id', 'missing_fields', 'masked_info', 'categoryId', 'subCategoryId', 'content', 'extraInfo' };
+
+                                  if (card['rawFields'] != null && (card['rawFields'] as Map).isNotEmpty) {
+                                    for (var entry in (card['rawFields'] as Map).entries) {
+                                      if (!excludeKeys.contains(entry.key) && fieldLabels.containsKey(entry.key) && entry.value != null && entry.value.toString().trim().isNotEmpty) {
+                                        aiFieldCtrls[entry.key] = TextEditingController(text: entry.value.toString());
+                                      }
+                                    }
+                                  }
+                                  
+                                  showDialog(
                                   context: context,
                                   builder: (ctx) => StatefulBuilder(
                                     builder: (context, setState) {
@@ -1182,7 +1325,35 @@ class HomeScreen extends ConsumerWidget {
                                                 else
                                                   TextField(controller: extraCtrl, decoration: const InputDecoration(labelText: '추가 정보')),
                                                 const SizedBox(height: 10),
-                                                TextField(controller: contentCtrl, maxLines: 5, decoration: const InputDecoration(labelText: '추출 본문')),
+                                                if (aiFieldCtrls.isNotEmpty) ...[
+                                                  const Align(
+                                                    alignment: Alignment.centerLeft,
+                                                    child: Text('✨ AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple, fontSize: 12)),
+                                                  ),
+                                                  const SizedBox(height: 5),
+                                                  Container(
+                                                    width: double.infinity,
+                                                    padding: const EdgeInsets.all(10),
+                                                    decoration: BoxDecoration(color: Colors.black.withOpacity(0.03), borderRadius: BorderRadius.circular(8)),
+                                                    child: Column(
+                                                      children: aiFieldCtrls.entries.map((e) {
+                                                        final label = fieldLabels[e.key] ?? e.key;
+                                                        return Padding(
+                                                          padding: const EdgeInsets.only(bottom: 8.0),
+                                                          child: TextField(
+                                                            controller: e.value,
+                                                            decoration: InputDecoration(
+                                                              labelText: label,
+                                                              isDense: true,
+                                                            ),
+                                                            style: const TextStyle(fontSize: 13),
+                                                          ),
+                                                        );
+                                                      }).toList(),
+                                                    ),
+                                                  ),
+                                                ] else
+                                                  TextField(controller: contentCtrl, maxLines: 5, decoration: const InputDecoration(labelText: '추출 본문')),
                                               ],
                                             ),
                                           ),
@@ -1191,7 +1362,16 @@ class HomeScreen extends ConsumerWidget {
                                           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
                                           TextButton(
                                             onPressed: () async {
+                                              Map<String, dynamic> updatedRawFields = {};
+                                              if (card['rawFields'] != null) {
+                                                updatedRawFields = Map<String, dynamic>.from(card['rawFields']);
+                                                for (var entry in aiFieldCtrls.entries) {
+                                                  updatedRawFields[entry.key] = entry.value.text;
+                                                }
+                                              }
+
                                               final newFields = jsonEncode({
+                                                if (updatedRawFields.isNotEmpty) ...updatedRawFields,
                                                 'title': titleCtrl.text,
                                                 'content': contentCtrl.text,
                                                 'extraInfo': extraCtrl.text,
@@ -1212,6 +1392,7 @@ class HomeScreen extends ConsumerWidget {
                                                       'extraInfo': extraCtrl.text,
                                                       'categoryId': editCatId,
                                                       'type': typeStr,
+                                                      'rawFields': updatedRawFields.isNotEmpty ? updatedRawFields : c['rawFields'],
                                                     };
                                                   }
                                                   return c;
@@ -1311,6 +1492,23 @@ class HomeScreen extends ConsumerWidget {
     final String currentMenu = ref.watch(currentMenuProvider);
     final drafts = ref.watch(draftCacheProvider);
     final progressText = ref.watch(queueProgressProvider);
+
+    List<String> missingFields = [];
+    if (pickedImages.isNotEmpty && activeIndex < pickedImages.length) {
+      final activePath = pickedImages[activeIndex].path;
+      final draft = drafts[activePath];
+      final fields = draft?.aiFields;
+      if (fields != null) {
+        final hasItems = fields.containsKey('items') && fields['items'] is List && (fields['items'] as List).isNotEmpty;
+        final List<dynamic> items = hasItems ? (fields['items'] as List) : [];
+        final currentItemIndex = ref.watch(currentItemIndexProvider);
+        final currentIdx = currentItemIndex >= items.length ? 0 : currentItemIndex;
+        final activeFields = hasItems ? (items[currentIdx] as Map<String, dynamic>) : fields;
+        if (activeFields['missing_fields'] is List) {
+           missingFields = List<String>.from(activeFields['missing_fields']);
+        }
+      }
+    }
 
     final titleController = ref.watch(titleControllerProvider);
     final contentController = ref.watch(contentControllerProvider);
@@ -1448,8 +1646,26 @@ class HomeScreen extends ConsumerWidget {
                                   height: 80,
                                   child: ListView.builder(
                                     scrollDirection: Axis.horizontal,
-                                    itemCount: pickedImages.length,
+                                    itemCount: pickedImages.length + 1,
                                     itemBuilder: (context, index) {
+                                      if (index == pickedImages.length) {
+                                        return GestureDetector(
+                                          onTap: () => _pickMultiImages(ref),
+                                          child: Container(
+                                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                                            width: 65,
+                                            decoration: BoxDecoration(
+                                              borderRadius: BorderRadius.circular(10),
+                                              border: Border.all(color: SoseangTheme.border, width: 2),
+                                              color: SoseangTheme.cream.withValues(alpha: 0.5),
+                                            ),
+                                            child: const Center(
+                                              child: Icon(Icons.add, color: SoseangTheme.textMuted, size: 28),
+                                            ),
+                                          ),
+                                        );
+                                      }
+
                                       bool isActive = index == activeIndex;
                                       final imgPath = pickedImages[index].path;
                                       final draft = drafts[imgPath];
@@ -1663,67 +1879,119 @@ class HomeScreen extends ConsumerWidget {
                                             ],
                                           ),
                                           const SizedBox(height: 15),
-                                          TextField(
-                                            controller: titleController,
-                                            decoration: InputDecoration(
-                                              labelText: '📌 제목 수정',
-                                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                                              fillColor: SoseangTheme.ivory,
-                                              filled: true,
-                                            ),
+                                          Builder(
+                                            builder: (context) {
+                                              final isHighlighted = (ocrStatus == 'success' && titleController.text.trim().isEmpty) || missingFields.contains('title') || missingFields.contains('name') || missingFields.contains('product_name');
+                                              return TextField(
+                                                controller: titleController,
+                                                onChanged: (_) => (context as Element).markNeedsBuild(),
+                                                decoration: InputDecoration(
+                                                  labelText: '📌 제목 수정',
+                                                  border: OutlineInputBorder(
+                                                    borderRadius: BorderRadius.circular(10),
+                                                    borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(),
+                                                  ),
+                                                  enabledBorder: OutlineInputBorder(
+                                                    borderRadius: BorderRadius.circular(10),
+                                                    borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(color: Colors.black38),
+                                                  ),
+                                                  fillColor: isHighlighted ? Colors.red.shade50 : SoseangTheme.ivory,
+                                                  filled: true,
+                                                ),
+                                              );
+                                            },
                                           ),
                                           const SizedBox(height: 15),
                                           
                                           if (selectedCategory == 0) ...[
-                                            TextField(
-                                              controller: scheduleDateController,
-                                              readOnly: true,
-                                              onTap: () async {
-                                                DateTime? pickedDate = await showDatePicker(
-                                                  context: context,
-                                                  initialDate: DateTime.now(),
-                                                  firstDate: DateTime(2000),
-                                                  lastDate: DateTime(2101),
+                                            Builder(
+                                              builder: (context) {
+                                                final isHighlighted = (ocrStatus == 'success' && scheduleDateController.text.trim().isEmpty) || missingFields.contains('start_at') || missingFields.contains('expires_at');
+                                                return TextField(
+                                                  controller: scheduleDateController,
+                                                  readOnly: true,
+                                                  onTap: () async {
+                                                    DateTime? pickedDate = await showDatePicker(
+                                                      context: context,
+                                                      initialDate: DateTime.now(),
+                                                      firstDate: DateTime(2000),
+                                                      lastDate: DateTime(2101),
+                                                    );
+                                                    if (pickedDate != null) {
+                                                      String formattedDate = "${pickedDate.year}/${pickedDate.month.toString().padLeft(2, '0')}/${pickedDate.day.toString().padLeft(2, '0')}";
+                                                      scheduleDateController.text = formattedDate;
+                                                      (context as Element).markNeedsBuild();
+                                                    }
+                                                  },
+                                                  decoration: InputDecoration(
+                                                    labelText: selectedSubCategory == 1 ? '⏰ 기프티콘 유효기간 선택' : '⏰ 일정 날짜 선택', 
+                                                    border: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(10),
+                                                      borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(),
+                                                    ),
+                                                    enabledBorder: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(10),
+                                                      borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(color: Colors.black38),
+                                                    ),
+                                                    prefixIcon: Icon(Icons.calendar_today, color: isHighlighted ? Colors.redAccent : SoseangTheme.scheduleDark),
+                                                    fillColor: isHighlighted ? Colors.red.shade50 : SoseangTheme.ivory,
+                                                    filled: true,
+                                                  ),
                                                 );
-                                                if (pickedDate != null) {
-                                                  String formattedDate = "${pickedDate.year}/${pickedDate.month.toString().padLeft(2, '0')}/${pickedDate.day.toString().padLeft(2, '0')}";
-                                                  scheduleDateController.text = formattedDate;
-                                                }
                                               },
-                                              decoration: InputDecoration(
-                                                labelText: selectedSubCategory == 1 ? '⏰ 기프티콘 유효기간 선택' : '⏰ 일정 날짜 선택', 
-                                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), 
-                                                prefixIcon: Icon(Icons.calendar_today, color: SoseangTheme.scheduleDark),
-                                                fillColor: SoseangTheme.ivory,
-                                                filled: true,
-                                              ),
                                             ),
                                             const SizedBox(height: 15),
                                           ],
                                           if (selectedCategory == 1) ...[
-                                            TextField(
-                                              controller: placeLocationController,
-                                              decoration: InputDecoration(
-                                                labelText: '📍 장소 위치/주소 입력',
-                                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                                                prefixIcon: Icon(Icons.pin_drop, color: SoseangTheme.placeDark),
-                                                fillColor: SoseangTheme.ivory,
-                                                filled: true,
-                                              ),
+                                            Builder(
+                                              builder: (context) {
+                                                final isHighlighted = (ocrStatus == 'success' && placeLocationController.text.trim().isEmpty) || missingFields.contains('address');
+                                                return TextField(
+                                                  controller: placeLocationController,
+                                                  onChanged: (_) => (context as Element).markNeedsBuild(),
+                                                  decoration: InputDecoration(
+                                                    labelText: '📍 장소 위치/주소 입력',
+                                                    border: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(10),
+                                                      borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(),
+                                                    ),
+                                                    enabledBorder: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(10),
+                                                      borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(color: Colors.black38),
+                                                    ),
+                                                    prefixIcon: Icon(Icons.pin_drop, color: isHighlighted ? Colors.redAccent : SoseangTheme.placeDark),
+                                                    fillColor: isHighlighted ? Colors.red.shade50 : SoseangTheme.ivory,
+                                                    filled: true,
+                                                  ),
+                                                );
+                                              },
                                             ),
                                             const SizedBox(height: 15),
                                           ],
                                           
                                           if ((ref.watch(draftCacheProvider)[pickedImages[activeIndex].path])?.aiFields == null)
-                                            TextField(
-                                              controller: contentController,
-                                              maxLines: 4,
-                                              decoration: InputDecoration(
-                                                labelText: '📝 원본 OCR 텍스트',
-                                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                                                fillColor: SoseangTheme.ivory,
-                                                filled: true,
-                                              ),
+                                            Builder(
+                                              builder: (context) {
+                                                final isHighlighted = ocrStatus == 'success' && contentController.text.trim().isEmpty;
+                                                return TextField(
+                                                  controller: contentController,
+                                                  maxLines: 4,
+                                                  onChanged: (_) => (context as Element).markNeedsBuild(),
+                                                  decoration: InputDecoration(
+                                                    labelText: '📝 원본 OCR 텍스트',
+                                                    border: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(10),
+                                                      borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(),
+                                                    ),
+                                                    enabledBorder: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(10),
+                                                      borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(color: Colors.black38),
+                                                    ),
+                                                    fillColor: isHighlighted ? Colors.red.shade50 : SoseangTheme.ivory,
+                                                    filled: true,
+                                                  ),
+                                                );
+                                              },
                                             ),
                                           const SizedBox(height: 10),
                                           const DynamicFeaturesCard(),
@@ -2407,25 +2675,37 @@ class DynamicFeaturesCard extends ConsumerWidget {
     if (fields == null || fields.isEmpty) return const SizedBox();
 
     final Map<String, String> fieldLabels = {
+      // ── 공통 ──
       'title': '제목',
-      'expires_at': '만료일',
+      'memo': '메모',
+      // ── SCHEDULE ──
+      'sub_type': '세부 분류',
       'start_at': '시작일',
+      'expires_at': '만료일',
+      'location': '장소',
+      'barcode_number': '바코드 번호',
+      // ── PLACE ──
       'name': '상호명',
+      'category': '카테고리',
       'address': '주소',
       'region': '지역',
+      // ── WISHLIST ──
       'product_name': '상품명',
       'price_amount': '가격',
-      'memo': '메모',
+      'brand_or_store': '브랜드/판매처',
+      'option': '옵션',
+      'url': '상품 링크',
+      // ── MEMO ──
+      'body': '본문',
+      'tags': '태그',
+      // ── 기존 호환 ──
       'original_price': '정가',
       'discount_rate': '할인율',
-      'category': '카테고리',
       'rating': '평점',
       'hours': '영업시간',
       'seller': '판매처',
-      'body': '본문',
       'description': '설명',
       'exchange_place': '교환처',
-      'sub_type': '세부 분류',
     };
 
     // 복수 항목 처리
@@ -2436,14 +2716,26 @@ class DynamicFeaturesCard extends ConsumerWidget {
 
     final activeFields = hasItems ? (items[currentIdx] as Map<String, dynamic>) : fields;
 
-    // 핵심 필드 및 시스템 내부 키 제외
+    // 상단 폼에서 이미 직접 편집 가능한 필드 + 시스템 내부 필드 제외
     final excludeKeys = {
-      'title', 'expires_at', 'start_at', 'name', 'address',
-      'product_name', 'price_amount', 'items', 'body', 'sub_type'
+      // 상단 폼에서 편집하는 핵심 필드
+      'title', 'name', 'product_name',       // 제목 칸
+      'start_at', 'expires_at',               // 일정 날짜 칸
+      'address',                              // 장소 주소 칸
+      'price_amount',                         // 가격 (위시 제목에 포함)
+      // 시스템 내부 필드 (사용자에게 보여줄 필요 없음)
+      'items', 'body',                        // 구조/원문
+      'keep_photo', 'map_ready',              // 서버 지시 플래그
+      'calendar_type', 'reminder_days',       // 캘린더 자동 설정
+      'recurrence',                           // 구독 반복 주기
+      'confidence', 'status', 'id',           // 최상위 메타
+      'missing_fields', 'masked_info',        // 서버 메타
+      'categoryId', 'subCategoryId',          // 로컬 내부 저장용
+      'content', 'extraInfo',                 // 로컬 내부 저장용
     };
 
     final entryList = activeFields.entries
-        .where((entry) => !excludeKeys.contains(entry.key) && entry.value != null && entry.value.toString().trim().isNotEmpty)
+        .where((entry) => !excludeKeys.contains(entry.key) && fieldLabels.containsKey(entry.key) && entry.value != null && entry.value.toString().trim().isNotEmpty)
         .toList();
 
     return Card(
@@ -2534,13 +2826,62 @@ class DynamicFeaturesCard extends ConsumerWidget {
                 itemBuilder: (context, index) {
                   final entry = entryList[index];
                   final label = fieldLabels[entry.key] ?? entry.key;
+
+                  // sub_type 코드를 한국어로 변환
+                  const subTypeLabels = {
+                    'GIFTICON': '기프티콘/쿠폰',
+                    'SUBSCRIPTION': '구독 서비스',
+                    'APPOINTMENT': '약속/미팅',
+                    'TICKET': '티켓/예약',
+                    'DEADLINE': '마감일/시험',
+                    'DELIVERY': '택배/배송',
+                  };
+
+                  // 필드별 아이콘 매핑
+                  const fieldIcons = {
+                    'sub_type': Icons.label_outline,
+                    'memo': Icons.sticky_note_2_outlined,
+                    'location': Icons.location_on_outlined,
+                    'barcode_number': Icons.qr_code,
+                    'category': Icons.category_outlined,
+                    'region': Icons.map_outlined,
+                    'brand_or_store': Icons.storefront_outlined,
+                    'option': Icons.tune,
+                    'url': Icons.link,
+                    'tags': Icons.tag,
+                    'original_price': Icons.price_change_outlined,
+                    'discount_rate': Icons.discount_outlined,
+                    'rating': Icons.star_outline,
+                    'hours': Icons.access_time,
+                    'seller': Icons.store_outlined,
+                    'description': Icons.description_outlined,
+                    'exchange_place': Icons.swap_horiz,
+                  };
+
+                  // 표시 값 계산
+                  String displayValue;
+                  if (entry.key == 'sub_type') {
+                    displayValue = subTypeLabels[entry.value.toString()] ?? entry.value.toString();
+                  } else if (entry.value is List) {
+                    displayValue = (entry.value as List).join(', ');
+                  } else {
+                    displayValue = entry.value.toString();
+                  }
+
+                  final icon = fieldIcons[entry.key];
+                  final isReadOnly = entry.key == 'sub_type';
+
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4.0),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (icon != null) ...[
+                          Icon(icon, size: 14, color: Colors.deepPurple.shade300),
+                          const SizedBox(width: 4),
+                        ],
                         SizedBox(
-                          width: 90,
+                          width: icon != null ? 72 : 90,
                           child: Text(
                             label,
                             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black54),
@@ -2548,23 +2889,28 @@ class DynamicFeaturesCard extends ConsumerWidget {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: TextFormField(
-                            key: ValueKey('${currentIdx}_${entry.key}'),
-                            initialValue: entry.value.toString(),
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              contentPadding: EdgeInsets.symmetric(vertical: 4, horizontal: 0),
-                              border: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black12)),
-                            ),
-                            onChanged: (val) {
-                              if (hasItems) {
-                                items[currentIdx][entry.key] = val;
-                              } else {
-                                fields![entry.key] = val;
-                              }
-                            },
-                          ),
+                          child: isReadOnly
+                            ? Text(
+                                displayValue,
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.deepPurple.shade400),
+                              )
+                            : TextFormField(
+                                key: ValueKey('${currentIdx}_${entry.key}'),
+                                initialValue: displayValue,
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(vertical: 4, horizontal: 0),
+                                  border: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black12)),
+                                ),
+                                onChanged: (val) {
+                                  if (hasItems) {
+                                    items[currentIdx][entry.key] = val;
+                                  } else {
+                                    fields![entry.key] = val;
+                                  }
+                                },
+                              ),
                         ),
                       ],
                     ),
