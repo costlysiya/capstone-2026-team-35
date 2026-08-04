@@ -1,5 +1,8 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
-from app.schemas import AnalyzeRequest, AnalyzeResponse, BatchAnalyzeRequest, BatchAnalyzeResponse, BatchAsyncResponse, BatchStatusResponse
+from app.schemas import (
+    AnalyzeRequest, AnalyzeResponse, BatchAnalyzeRequest, BatchAnalyzeResponse,
+    BatchAsyncResponse, BatchStatusResponse, ClassifyResponse, BatchClassifyResponse
+)
 from app.prompts import get_system_prompt, CLASSIFY_PROMPT, get_type_prompt
 from app.validator import validate_result
 from app.database import save_result, get_result_by_hash
@@ -214,6 +217,58 @@ def analyze_v2(request: AnalyzeRequest):
         masked_info=masked_info_list
     )
 
+@router.post("/classify/batch", response_model=BatchClassifyResponse)
+def classify_batch(request: BatchAnalyzeRequest):
+    """
+    초고속 분류 전용 묶음 API.
+    대량의 텍스트에 대해 DB 저장 및 상세 추출 없이 대분류(SCHEDULE, PLACE 등)만 빠르게 수행합니다.
+    최대 50개까지 허용.
+    """
+    if len(request.items) > 50:
+        raise HTTPException(
+            status_code=400,
+            detail="초고속 분류 배치 요청은 최대 50개까지 가능합니다"
+        )
+    if len(request.items) == 0:
+        raise HTTPException(status_code=400, detail="분석할 항목이 없습니다")
+
+    results = []
+    
+    for idx, item in enumerate(request.items):
+        try:
+            clean_text = item.ocr_text.strip()
+            if len(clean_text) < 3:
+                results.append(ClassifyResponse(
+                    index=idx, type="MEMO", confidence=0.0, reasoning="텍스트가 너무 짧습니다"
+                ))
+                continue
+                
+            if len(clean_text) > 5000:
+                clean_text = clean_text[:5000]
+
+            classify_result = call_llm_with_limit(
+                call_llm,
+                system_prompt=CLASSIFY_PROMPT,
+                user_text=clean_text
+            )
+            
+            detected_type = classify_result.get("type", "MEMO")
+            confidence = classify_result.get("confidence", 0.0)
+            reasoning = classify_result.get("reasoning", "이유 없음")
+            
+            results.append(ClassifyResponse(
+                index=idx,
+                type=detected_type,
+                confidence=confidence,
+                reasoning=reasoning
+            ))
+        except Exception as e:
+            logger.error(f"[classify_batch] 항목 {idx} 실패: {e}")
+            results.append(ClassifyResponse(
+                index=idx, type="MEMO", confidence=0.0, reasoning=f"분류 에러: {str(e)}"
+            ))
+
+    return BatchClassifyResponse(total=len(request.items), results=results)
 
 @router.post("/analyze/batch", response_model=BatchAnalyzeResponse)
 def analyze_batch(request: BatchAnalyzeRequest):

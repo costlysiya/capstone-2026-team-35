@@ -25,6 +25,13 @@ class AnalyzeRequest(BaseModel):
             }
         }
 
+class ClassifyResponse(BaseModel):
+    """분류 전용 결과 응답"""
+    index: int
+    type: str
+    confidence: float
+    reasoning: str
+
 class AnalyzeResponse(BaseModel):
     """서버 → 앱 응답"""
     id: int | None = None
@@ -70,6 +77,10 @@ class BatchAnalyzeResponse(BaseModel):
     failed: int
     results: list[AnalyzeResponse]
     errors: list[dict] = []
+class BatchClassifyResponse(BaseModel):
+    """묶음 분류 전용 응답"""
+    total: int
+    results: list[ClassifyResponse]
 
 class BatchAsyncResponse(BaseModel):
     """비동기 배치 분석 접수 응답"""
