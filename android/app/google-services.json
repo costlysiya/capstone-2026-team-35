@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "733694366016",
+    "project_id": "soseang-app",
+    "storage_bucket": "soseang-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:733694366016:android:498004bfe1cee32be06aa5",
+        "android_client_info": {
+          "package_name": "com.example.soseang_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAD8Sf99jhZnRolPJzpkorNwLDUmZSU1Pg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

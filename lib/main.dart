@@ -13,6 +13,11 @@ import 'core/storage/database_helper.dart';
 import 'core/utils/masking_helper.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
+import 'services/fcm_service.dart';
+import 'screens/notifications_screen.dart';
+import 'package:badges/badges.dart' as badges;
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 🎨 소생 앱 디자인 테마 (뮤트파스텔-아이보리-베이지)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -64,6 +69,9 @@ final onDeviceClassifier = OnDeviceTextClassifier();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   await AppStorage.initDirectories();
   await onDeviceClassifier.initialize();
 
@@ -1784,6 +1792,7 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    FCMService().initialize(context);
     final List<XFile> pickedImages = ref.watch(pickedImagesProvider);
     final int activeIndex = ref.watch(activeImageIndexProvider);
     final String ocrStatus = ref.watch(ocrStatusProvider);
@@ -1846,6 +1855,26 @@ class HomeScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Text(appBarTitle),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: badges.Badge(
+              showBadge: true, // 안 읽은 알림이 있을 때만 true
+              badgeContent: const Text('2', style: TextStyle(color: Colors.white, fontSize: 10)),
+              badgeStyle: const badges.BadgeStyle(
+                badgeColor: Colors.redAccent,
+                padding: EdgeInsets.all(4),
+              ),
+              child: const Icon(Icons.notifications_none),
+            ),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const NotificationsScreen()),
+              );
+            },
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: SizedBox.expand(
         child: Stack(
