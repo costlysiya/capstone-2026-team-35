@@ -173,9 +173,12 @@ class OcrDraft {
 // 캐시 및 백그라운드 큐 관리 프로바이더
 final draftCacheProvider = StateProvider<Map<String, OcrDraft>>((ref) => {});
 final queueProgressProvider = StateProvider<String>((ref) => '');
+final serverProgressProvider = StateProvider<String>((ref) => '');
 
 // 대기열 및 선택 인덱스 관리
 final pickedImagesProvider = StateProvider<List<XFile>>((ref) => []);
+final selectionModeProvider = StateProvider<bool>((ref) => false);
+final selectedImagesProvider = StateProvider<Set<String>>((ref) => {});
 final activeImageIndexProvider = StateProvider<int>((ref) => 0);
 
 final ocrStatusProvider = StateProvider<String>((ref) => 'idle'); 
@@ -280,7 +283,41 @@ class HomeScreen extends ConsumerWidget {
       final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
       await textRecognizer.close();
 
-      final rawText = recognizedText.text.trim();
+      // 1. Layout-Aware OCR (공간 좌표 기반 텍스트 정렬)
+      final List<TextLine> allLines = [];
+      for (final block in recognizedText.blocks) {
+        allLines.addAll(block.lines);
+      }
+
+      // Y축 기준으로 대략적 정렬 (위에서 아래로)
+      allLines.sort((a, b) => a.boundingBox.center.dy.compareTo(b.boundingBox.center.dy));
+
+      // Y축이 비슷한(동일 행) 라인들을 그룹화 (오차범위 15픽셀)
+      final List<List<TextLine>> rows = [];
+      for (final line in allLines) {
+        if (rows.isEmpty) {
+          rows.add([line]);
+        } else {
+          final lastRow = rows.last;
+          // 현재 라인과 마지막 행의 Y축 중앙값 차이 계산
+          final yDiff = (line.boundingBox.center.dy - lastRow.first.boundingBox.center.dy).abs();
+          if (yDiff < 15) {
+            lastRow.add(line);
+          } else {
+            rows.add([line]);
+          }
+        }
+      }
+
+      // 각 행 내에서 X축 기준으로 정렬 (왼쪽에서 오른쪽으로)하고 텍스트 조립
+      final buffer = StringBuffer();
+      for (final row in rows) {
+        row.sort((a, b) => a.boundingBox.center.dx.compareTo(b.boundingBox.center.dx));
+        buffer.writeln(row.map((e) => e.text).join(' \t ')); // 마크다운 표처럼 구분을 위해 탭 추가
+      }
+      
+      final rawText = buffer.toString().trim();
+
       if (rawText.isEmpty) {
         final draft = OcrDraft(
           imagePath: image.path,
@@ -297,8 +334,29 @@ class HomeScreen extends ConsumerWidget {
       }
 
       final lowerText = rawText.toLowerCase();
-      final firstLine = rawText.split('\n').first.trim();
-      final titleText = firstLine.isNotEmpty ? firstLine : '새로운 소생 카드';
+      
+      // 2. 1차 오토필 (제목 추출 정확도 개선)
+      String titleText = '새로운 소생 카드';
+      for (final row in rows) {
+        final text = row.map((e) => e.text).join(' ').trim();
+        if (text.isEmpty) continue;
+        
+        // 상태바(시간, 배터리, 통신사 등) 무시 필터링
+        final cleanedText = text.replaceAll(RegExp(r'\s+'), '').toUpperCase();
+        final hasTime = RegExp(r'\d{1,2}:\d{2}').hasMatch(cleanedText);
+        final hasBattery = RegExp(r'\d{1,3}%').hasMatch(cleanedText);
+        final hasCarrier = RegExp(r'(SKT|KT|LG|LGU\+|LTE|5G)').hasMatch(cleanedText);
+        
+        if (hasTime || hasBattery || hasCarrier) {
+           final koreanOrMeaningful = cleanedText.replaceAll(RegExp(r'[A-Z0-9:%]'), '').replaceAll('오전', '').replaceAll('오후', '');
+           if (koreanOrMeaningful.length < 2) continue; // 의미 있는 텍스트가 2자 미만이면 상태바로 간주
+        }
+
+        if (text.length < 2) continue; // 너무 짧은 단어 무시
+        
+        titleText = text;
+        break; // 의미 있는 첫 번째 줄을 제목으로!
+      }
 
       // 온디바이스 AI 분류기 구동!
       final aiResultType = onDeviceClassifier.classify(rawText);
@@ -318,14 +376,29 @@ class HomeScreen extends ConsumerWidget {
 
       int subCat = 0;
       String schedDate = '';
+      String pLocation = '';
+
       if (finalCategory == 0) {
         final isGifticon = ['기프티콘', '쿠폰', '바코드', '교환권', '모바일상품권', '모바일쿠폰', '선물하기', '교환처'].any((k) => lowerText.contains(k)) ||
                            lowerText.contains('사용기한') || lowerText.contains('유효기간');
         if (isGifticon) {
           subCat = 1;
+        }
+        
+        // 날짜 추출 (기프티콘 여부와 무관하게 일정 카테고리 전체 적용)
+        final fullTextCleaned = rawText.replaceAll('\n', ' ');
+        final dateBase = r'(\d{2,4}[.\-/년]\s?\d{1,2}[.\-/월]\s?\d{1,2}일?)';
+        
+        // 1. 유효기간, 기한, 마감, 까지 등이 명시된 deadline 최우선 추출
+        final deadlinePat = RegExp('(유효기간|유효 기간|기한|마감|기간|일시)[^0-9]*' + dateBase + '|' + dateBase + r'\s*까지');
+        final deadlineMatch = deadlinePat.firstMatch(fullTextCleaned);
+        
+        if (deadlineMatch != null) {
+          schedDate = deadlineMatch.group(2) ?? deadlineMatch.group(3) ?? deadlineMatch.group(0)!;
+        } else {
+          // 2. 명시된 기한이 없으면 일반 날짜 아무거나 추출
           final datePat1 = RegExp(r'\b(\d{2}|\d{4})[.\-/]\d{1,2}[.\-/]\d{1,2}\b');
           final datePat2 = RegExp(r'(\d{2}|\d{4})년\s?\d{1,2}월\s?\d{1,2}일');
-          final fullTextCleaned = rawText.replaceAll('\n', ' ');
           final m1 = datePat1.firstMatch(fullTextCleaned);
           if (m1 != null) {
             schedDate = m1.group(0)!;
@@ -336,6 +409,17 @@ class HomeScreen extends ConsumerWidget {
             }
           }
         }
+      } else if (finalCategory == 1) { // PLACE
+        // 주소 오토필 로직
+        final addressPat = RegExp(r'([가-힣]+(시|도)\s+[가-힣]+(시|군|구)\s+[가-힣]+(동|읍|면|로|길)\s*\d*(-\d+)?)');
+        final m1 = addressPat.firstMatch(rawText);
+        if (m1 != null) {
+          pLocation = m1.group(0)!;
+        } else {
+          final fallbackPat = RegExp(r'([가-힣]+(시|군|구)\s+[가-힣]+(동|읍|면|로|길)\s*\d+(-\d+)?)');
+          final m2 = fallbackPat.firstMatch(rawText);
+          if (m2 != null) pLocation = m2.group(0)!;
+        }
       }
 
       // SQLite DB에 1차 초안(DRAFT) 레코드 등록
@@ -343,7 +427,7 @@ class HomeScreen extends ConsumerWidget {
         await DatabaseHelper.instance.insertScreenshot({
           'type': aiResultType,
           'confidence': 0.95,
-          'fields': jsonEncode({'title': titleText, 'body': rawText, 'expires_at': schedDate}),
+          'fields': jsonEncode({'title': titleText, 'body': rawText, 'expires_at': schedDate, 'address': pLocation}),
           'image_path': image.path,
           'status': 'DRAFT',
         });
@@ -360,6 +444,7 @@ class HomeScreen extends ConsumerWidget {
         category: finalCategory,
         subCategory: subCat,
         scheduleDate: schedDate,
+        placeLocation: pLocation,
       );
 
       final cache = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
@@ -433,6 +518,11 @@ class HomeScreen extends ConsumerWidget {
     }
 
     ref.read(queueProgressProvider.notifier).state = '✅ 로컬 분석 완료';
+    Future.delayed(const Duration(seconds: 3), () {
+      if (ref.read(queueProgressProvider).startsWith('✅')) {
+        ref.read(queueProgressProvider.notifier).state = '';
+      }
+    });
   }
 
   // 4. 선택 활성 이미지 변경 시
@@ -838,6 +928,148 @@ class HomeScreen extends ConsumerWidget {
           ref.read(draftCacheProvider.notifier).state = cacheMap3;
         }
       }
+    }
+  }
+
+  Future<void> _runBackgroundAIAnalysis(WidgetRef ref, String imagePath) async {
+    final cacheMap = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
+    final draft = cacheMap[imagePath];
+    if (draft == null) return;
+    
+    // 로딩 상태 반영
+    cacheMap[imagePath] = draft.copyWith(aiStatus: 'loading');
+    ref.read(draftCacheProvider.notifier).state = cacheMap;
+
+    final rawText = draft.content;
+    if (rawText.trim().isEmpty) {
+      _updateDraftError(ref, imagePath, '분석할 텍스트가 없습니다.');
+      return;
+    }
+
+    final maskedText = MaskingHelper.mask(rawText);
+
+    try {
+      final dio = Dio();
+      const serverUrl = 'http://44.195.33.82:8000/api/analyze/v2';
+      
+      final indexToType = {
+        0: 'SCHEDULE', 1: 'PLACE', 2: 'WISHLIST', 3: 'MEMO',
+      };
+      final localType = indexToType[draft.category] ?? 'MEMO';
+
+      final response = await dio.post(
+        serverUrl,
+        data: {
+          'ocr_text': maskedText,
+          'type': localType,
+          'masked_tokens': <String>[],
+        },
+        options: Options(contentType: 'application/json'),
+      ).timeout(const Duration(seconds: 15));
+      
+      if (response.statusCode == 200 && response.data != null) {
+        final data = response.data;
+        final typeStr = data['type'] as String;
+        final fields = data['fields'] as Map<String, dynamic>;
+
+        final typeToIndex = {'SCHEDULE': 0, 'PLACE': 1, 'WISHLIST': 2, 'MEMO': 3};
+        final categoryIndex = typeToIndex[typeStr] ?? 3;
+
+        int subCategoryIndex = 0;
+        String newTitle = '새로운 메모';
+        String newSchedule = '';
+        String newPlace = '';
+
+        if (categoryIndex == 0) {
+          final subType = fields['sub_type'] as String?;
+          final isGifticon = subType == 'GIFTICON' || (fields['exchange_place'] != null) ||
+                             maskedText.contains('기프티콘') || maskedText.contains('쿠폰');
+          subCategoryIndex = isGifticon ? 1 : 0;
+          newTitle = fields['title'] ?? '새로운 일정';
+          newSchedule = (fields['expires_at'] as String?) ?? (fields['start_at'] as String?) ?? '';
+        }
+        else if (categoryIndex == 1) {
+          Map<String, dynamic> placeFields = fields;
+          if (fields['items'] != null && (fields['items'] as List).isNotEmpty) placeFields = (fields['items'] as List).first;
+          newTitle = placeFields['name'] ?? '새로운 장소';
+          newPlace = placeFields['address'] ?? placeFields['region'] ?? '';
+        }
+        else if (categoryIndex == 2) {
+          Map<String, dynamic> itemFields = fields;
+          if (fields['items'] != null && (fields['items'] as List).isNotEmpty) itemFields = (fields['items'] as List).first;
+          newTitle = itemFields['product_name'] ?? '새로운 위시 상품';
+        }
+        else if (categoryIndex == 3) {
+          newTitle = fields['title'] ?? '새로운 메모';
+        }
+
+        final cacheMap2 = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
+        if (cacheMap2.containsKey(imagePath)) {
+          cacheMap2[imagePath] = cacheMap2[imagePath]!.copyWith(
+            aiStatus: 'success',
+            aiFields: fields,
+            category: categoryIndex,
+            subCategory: subCategoryIndex,
+            title: newTitle,
+            scheduleDate: newSchedule,
+            placeLocation: newPlace,
+          );
+          ref.read(draftCacheProvider.notifier).state = cacheMap2;
+        }
+
+        // 화면 갱신 (선택된 이미지가 현재 활성화된 이미지인 경우)
+        final pickedImages = ref.read(pickedImagesProvider);
+        final activeIndex = ref.read(activeImageIndexProvider);
+        if (pickedImages.isNotEmpty && activeIndex < pickedImages.length && pickedImages[activeIndex].path == imagePath) {
+          ref.read(selectedCategoryProvider.notifier).state = categoryIndex;
+          ref.read(selectedSubCategoryProvider.notifier).state = subCategoryIndex;
+          ref.read(titleControllerProvider).text = newTitle;
+          ref.read(scheduleDateProvider).text = newSchedule;
+          ref.read(placeLocationProvider).text = newPlace;
+        }
+      } else {
+        throw Exception('서버 응답 비정상');
+      }
+    } catch (e) {
+      _updateDraftError(ref, imagePath, 'AI 분석 실패: 로컬 판정 유지');
+    }
+  }
+
+  void _updateDraftError(WidgetRef ref, String imagePath, String errorMsg) {
+    final cache = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
+    if (cache.containsKey(imagePath)) {
+      cache[imagePath] = cache[imagePath]!.copyWith(aiStatus: 'error');
+      ref.read(draftCacheProvider.notifier).state = cache;
+    }
+  }
+
+  void _startBatchAIAnalysis(WidgetRef ref) {
+    final selected = ref.read(selectedImagesProvider).toList();
+    if (selected.isEmpty) return;
+    
+    // UI 초기화
+    ref.read(selectionModeProvider.notifier).state = false;
+    ref.read(selectedImagesProvider.notifier).state = {};
+
+    final total = selected.length;
+    int completed = 0;
+    ref.read(serverProgressProvider.notifier).state = '🌐 서버 분석 중 (0/$total)';
+
+    for (final imgPath in selected) {
+      _runBackgroundAIAnalysis(ref, imgPath).then((_) {
+        completed++;
+        if (completed >= total) {
+          ref.read(serverProgressProvider.notifier).state = '✅ 서버 분석 완료 ($total장)';
+          Future.delayed(const Duration(seconds: 3), () {
+            // 3초 후 자동으로 숨기기
+            if (ref.read(serverProgressProvider).startsWith('✅')) {
+              ref.read(serverProgressProvider.notifier).state = '';
+            }
+          });
+        } else {
+          ref.read(serverProgressProvider.notifier).state = '🌐 서버 분석 중 ($completed/$total)';
+        }
+      });
     }
   }
 
@@ -1492,6 +1724,9 @@ class HomeScreen extends ConsumerWidget {
     final String currentMenu = ref.watch(currentMenuProvider);
     final drafts = ref.watch(draftCacheProvider);
     final progressText = ref.watch(queueProgressProvider);
+    final selectionMode = ref.watch(selectionModeProvider);
+    final selectedImages = ref.watch(selectedImagesProvider);
+    final serverProgress = ref.watch(serverProgressProvider);
 
     List<String> missingFields = [];
     if (pickedImages.isNotEmpty && activeIndex < pickedImages.length) {
@@ -1627,17 +1862,48 @@ class HomeScreen extends ConsumerWidget {
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Text('⏳ 대기열 (${pickedImages.length}장 남음)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: SoseangTheme.textDark)),
-                                    if (progressText.isNotEmpty)
+                                    Text(selectionMode ? '다중 선택 모드' : '⏳ 대기열 (${pickedImages.length}장 남음)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: SoseangTheme.textDark)),
+                                    if (progressText.isNotEmpty && !selectionMode)
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                         decoration: BoxDecoration(color: SoseangTheme.gifticonColor.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(10), border: Border.all(color: SoseangTheme.gifticonDark)),
                                         child: Text(progressText, style: const TextStyle(color: SoseangTheme.gifticonDark, fontSize: 11, fontWeight: FontWeight.bold)),
                                       ),
-                                    TextButton.icon(
-                                      onPressed: () => _removeActiveImage(ref),
-                                      icon: Icon(Icons.delete_outline, size: 14, color: SoseangTheme.wishDark),
-                                      label: Text('삭제', style: TextStyle(color: SoseangTheme.wishDark, fontSize: 11)),
+                                    if (serverProgress.isNotEmpty && !selectionMode)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(color: SoseangTheme.placeColor.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(10), border: Border.all(color: SoseangTheme.placeDark)),
+                                        child: Text(serverProgress, style: const TextStyle(color: SoseangTheme.placeDark, fontSize: 11, fontWeight: FontWeight.bold)),
+                                      ),
+                                    Row(
+                                      children: [
+                                        if (selectionMode) ...[
+                                          TextButton(
+                                            onPressed: () {
+                                              ref.read(selectedImagesProvider.notifier).state = pickedImages.map((e) => e.path).toSet();
+                                            },
+                                            child: const Text('전체선택', style: TextStyle(color: SoseangTheme.textDark, fontSize: 11)),
+                                          ),
+                                          TextButton(
+                                            onPressed: () {
+                                              ref.read(selectionModeProvider.notifier).state = false;
+                                              ref.read(selectedImagesProvider.notifier).state = {};
+                                            },
+                                            child: const Text('취소', style: TextStyle(color: SoseangTheme.textMuted, fontSize: 11)),
+                                          ),
+                                        ] else ...[
+                                          TextButton.icon(
+                                            onPressed: () => ref.read(selectionModeProvider.notifier).state = true,
+                                            icon: const Icon(Icons.check_box_outlined, size: 14, color: SoseangTheme.scheduleDark),
+                                            label: const Text('선택', style: TextStyle(color: SoseangTheme.scheduleDark, fontSize: 11)),
+                                          ),
+                                          TextButton.icon(
+                                            onPressed: () => _removeActiveImage(ref),
+                                            icon: const Icon(Icons.delete_outline, size: 14, color: SoseangTheme.wishDark),
+                                            label: const Text('삭제', style: TextStyle(color: SoseangTheme.wishDark, fontSize: 11)),
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                   ],
                                 ),
@@ -1688,8 +1954,21 @@ class HomeScreen extends ConsumerWidget {
                                         categoryBorderColor = style['bgColor'] ?? style['color'];
                                       }
 
+                                      final isSelected = selectedImages.contains(imgPath);
                                       return GestureDetector(
-                                        onTap: () => _selectActiveImage(ref, pickedImages, index),
+                                        onTap: () {
+                                          if (selectionMode) {
+                                            final updated = Set<String>.from(selectedImages);
+                                            if (isSelected) {
+                                              updated.remove(imgPath);
+                                            } else {
+                                              updated.add(imgPath);
+                                            }
+                                            ref.read(selectedImagesProvider.notifier).state = updated;
+                                          } else {
+                                            _selectActiveImage(ref, pickedImages, index);
+                                          }
+                                        },
                                         child: AnimatedContainer(
                                           duration: const Duration(milliseconds: 200),
                                           margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -1730,7 +2009,7 @@ class HomeScreen extends ConsumerWidget {
                                                     child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
                                                   ),
                                                 ),
-                                              if (isDone)
+                                              if (isDone && !selectionMode)
                                                 Positioned(
                                                   right: 2,
                                                   top: 2,
@@ -1743,6 +2022,16 @@ class HomeScreen extends ConsumerWidget {
                                                     child: Text(catIcon, style: const TextStyle(fontSize: 10)),
                                                   ),
                                                 ),
+                                              if (selectionMode)
+                                                Positioned(
+                                                  right: 2,
+                                                  top: 2,
+                                                  child: Icon(
+                                                    isSelected ? Icons.check_circle : Icons.circle_outlined,
+                                                    color: isSelected ? SoseangTheme.scheduleDark : Colors.white70,
+                                                    size: 20,
+                                                  ),
+                                                ),
                                             ],
                                           ),
                                         ),
@@ -1750,7 +2039,26 @@ class HomeScreen extends ConsumerWidget {
                                     },
                                   ),
                                 ),
+                                
+                                if (selectionMode && selectedImages.isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton.icon(
+                                      onPressed: () => _startBatchAIAnalysis(ref),
+                                      icon: const Icon(Icons.auto_awesome),
+                                      label: Text('선택 항목 AI 일괄 분석 (${selectedImages.length}장)'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: SoseangTheme.scheduleDark,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                                 const SizedBox(height: 15),
+
 
                                 Stack(
                                   children: [
