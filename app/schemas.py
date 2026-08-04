@@ -55,6 +55,7 @@ class ResultDetailResponse(BaseModel):
     status: str
     created_at: str | None = None
     updated_at: str | None = None
+    ical_string: str | None = None
 
 class BatchAnalyzeRequest(BaseModel):
     """배치 분석 요청 — 복수 이미지를 한 번에"""

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from app.database import (
     get_all_results, get_result_by_id, get_results_by_type,
     get_results_by_status, update_status, update_fields, delete_result,
@@ -7,6 +7,7 @@ from app.database import (
 from app.schemas import ResultConfirmRequest
 import json
 from app.validator import revalidate_after_edit
+from app.calendar import generate_ics
 
 router = APIRouter(prefix="/api/results", tags=["결과"])
 
@@ -67,7 +68,39 @@ def get_result(id: int):
         if "body" in result["fields"]:
             result["fields"]["body"] = "[AI 분석 완료 - 원문 숨김 처리됨]"
 
+    # SCHEDULE 타입이면 ical_string 추가
+    if result.get("type") == "SCHEDULE":
+        result["ical_string"] = generate_ics(result["fields"])
+
     return result
+
+@router.get("/{id}/ical")
+def download_ical(id: int):
+    """iCalendar (.ics) 파일 다운로드"""
+    result = get_result_by_id(id)
+    if not result:
+        raise HTTPException(status_code=404, detail=f"결과 #{id}을(를) 찾을 수 없습니다")
+        
+    if result.get("type") != "SCHEDULE":
+        raise HTTPException(status_code=400, detail="일정(SCHEDULE) 타입만 캘린더 연동이 가능합니다")
+        
+    if isinstance(result.get("fields"), str):
+        try:
+            fields = json.loads(result["fields"])
+        except json.JSONDecodeError:
+            fields = {}
+    else:
+        fields = result.get("fields", {})
+        
+    ics_content = generate_ics(fields)
+    
+    return Response(
+        content=ics_content,
+        media_type="text/calendar",
+        headers={
+            "Content-Disposition": f'attachment; filename="schedule_{id}.ics"'
+        }
+    )
 
 
 @router.put("/{id}")
