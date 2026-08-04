@@ -20,24 +20,41 @@ def init_db():
             confidence REAL,
             fields TEXT,
             status TEXT DEFAULT 'DRAFT',
+            image_hash TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # 해시 인덱스 (캐시 조회 속도 향상)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_image_hash ON screenshots(image_hash)
+    """)
     conn.commit()
     conn.close()
 
-def save_result(type: str, confidence: float, fields: str):
-    """분석 결과 저장"""
+def save_result(type: str, confidence: float, fields: str, image_hash: str = None):
+    """분석 결과 저장 (image_hash: 중복 분석 방지용 이미지 해시)"""
     conn = get_db()
     cursor = conn.execute(
-        "INSERT INTO screenshots (type, confidence, fields) VALUES (?, ?, ?)",
-        (type, confidence, fields)
+        "INSERT INTO screenshots (type, confidence, fields, image_hash) VALUES (?, ?, ?, ?)",
+        (type, confidence, fields, image_hash)
     )
     conn.commit()
     row_id = cursor.lastrowid
     conn.close()
     return row_id
+
+def get_result_by_hash(image_hash: str):
+    """이미지 해시로 기존 분석 결과 조회 (캐시 히트 확인)"""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM screenshots WHERE image_hash = ? ORDER BY created_at DESC LIMIT 1",
+        (image_hash,)
+    ).fetchone()
+    conn.close()
+    if row:
+        return dict(row)
+    return None
 
 def get_result_by_id(id: int):
     """단건 조회"""
@@ -74,6 +91,58 @@ def get_results_by_status(status: str):
     ).fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+def search_results(type: str = None, status: str = None, q: str = None, region: str = None, category: str = None, limit: int = 20, offset: int = 0):
+    """
+    통합 검색 및 필터, 페이지네이션 쿼리
+    JSON 컬럼(fields)에서 직접 값 추출 및 LIKE 검색 적용
+    """
+    conn = get_db()
+    
+    query = "SELECT * FROM screenshots WHERE 1=1"
+    params = []
+    
+    if type:
+        query += " AND type = ?"
+        params.append(type)
+    if status:
+        query += " AND status = ?"
+        params.append(status)
+    if region:
+        # JSON 문자열인 fields 안에 "region": "어쩌구" 가 포함되어 있는지 검사 (SQLite 3.38+ 호환)
+        query += " AND json_extract(fields, '$.region') LIKE ?"
+        params.append(f"%{region}%")
+    if category:
+        query += " AND json_extract(fields, '$.category') = ?"
+        params.append(category)
+    if q:
+        # type별로 검색 타겟을 조금 다르게 할 수도 있지만 우선 fields 전체 문자열에서 단순 포함 검색
+        query += " AND fields LIKE ?"
+        params.append(f"%{q}%")
+        
+    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+    
+    rows = conn.execute(query, tuple(params)).fetchall()
+    
+    # 전체 갯수도 같이 가져오기 (앱에서 페이지네이션/무한스크롤 처리용)
+    count_query = "SELECT COUNT(*) FROM screenshots WHERE 1=1"
+    count_params = params[:-2] # limit, offset 제외
+    if type:
+        count_query += " AND type = ?"
+    if status:
+        count_query += " AND status = ?"
+    if region:
+        count_query += " AND json_extract(fields, '$.region') LIKE ?"
+    if category:
+        count_query += " AND json_extract(fields, '$.category') = ?"
+    if q:
+        count_query += " AND fields LIKE ?"
+        
+    total_count = conn.execute(count_query, tuple(count_params)).fetchone()[0]
+    
+    conn.close()
+    return {"total": total_count, "items": [dict(row) for row in rows]}
 
 def update_fields(id: int, fields: str):
     """사용자가 수정한 필드 업데이트"""

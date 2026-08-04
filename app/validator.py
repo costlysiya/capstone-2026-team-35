@@ -42,6 +42,92 @@ def _validate_single_item(item: dict, result_type: str) -> list[str]:
     return missing
 
 
+def _enrich_schedule_fields(fields: dict) -> dict:
+    """
+    SCHEDULE 타입의 sub_type에 따라 자동으로 보강 필드를 채움.
+    앱에서 오토필 UI를 그릴 때 사용할 수 있도록.
+    """
+    sub_type = fields.get("sub_type", "OTHER")
+
+    # 1) 기프티콘: 사진 유지 + 만료 알림 자동 설정
+    if sub_type == "GIFTICON":
+        fields.setdefault("keep_photo", True)         # 바코드 원본 보관
+        fields.setdefault("reminder_days", [7, 3, 1])  # D-7, D-3, D-1
+        fields.setdefault("calendar_type", "EXPIRY")   # 만료일 기준 등록
+
+    # 2) 구독 서비스: 반복 주기 + 장기 알림
+    elif sub_type == "SUBSCRIPTION":
+        fields.setdefault("keep_photo", False)
+        fields.setdefault("reminder_days", [30, 7, 1])
+        fields.setdefault("calendar_type", "RENEWAL")  # 갱신일 기준
+        # LLM이 null로 반환했을 수 있으므로 setdefault 대신 직접 확인
+        if not fields.get("recurrence"):
+            fields["recurrence"] = "매월"
+
+    # 3) 일반 약속/미팅
+    elif sub_type == "APPOINTMENT":
+        fields.setdefault("keep_photo", False)          # 사진 삭제
+        fields.setdefault("reminder_days", [1])
+        fields.setdefault("calendar_type", "EVENT")
+
+    # 4) 티켓 (KTX, 영화, 공연)
+    elif sub_type == "TICKET":
+        fields.setdefault("keep_photo", True)           # 예매 번호 보관
+        fields.setdefault("reminder_days", [3, 1])
+        fields.setdefault("calendar_type", "EVENT")
+
+    # 5) 마감/시험
+    elif sub_type == "DEADLINE":
+        fields.setdefault("keep_photo", False)
+        fields.setdefault("reminder_days", [14, 7, 3, 1])
+        fields.setdefault("calendar_type", "DEADLINE")
+
+    # 6) 택배/배송
+    elif sub_type == "DELIVERY":
+        fields.setdefault("keep_photo", False)
+        fields.setdefault("reminder_days", [1])
+        fields.setdefault("calendar_type", "DELIVERY")
+
+    # 7) 기타/판별 불가
+    else:
+        fields.setdefault("keep_photo", False)
+        fields.setdefault("reminder_days", [1])
+        fields.setdefault("calendar_type", "EVENT")
+
+    return fields
+
+
+def _enrich_place_fields(fields: dict) -> dict:
+    """PLACE 타입 보강 — 지도 연동용 필드"""
+    fields.setdefault("keep_photo", False)      # 장소는 사진 불필요
+    fields.setdefault("map_ready", bool(fields.get("address") or fields.get("region")))
+    # category 정규화 (없으면 "기타")
+    fields.setdefault("category", "기타")
+    return fields
+
+
+def _enrich_wishlist_fields(fields: dict) -> dict:
+    """WISHLIST 타입 보강 — 원본 사진 보관 + 가격 정규화"""
+    fields.setdefault("keep_photo", True)       # 상품 원본 이미지 보관
+    # 가격 정규화: 문자열이면 숫자만 추출
+    price = fields.get("price_amount")
+    if isinstance(price, str):
+        import re
+        nums = re.sub(r'[^\d.]', '', price)
+        fields["price_amount"] = float(nums) if nums else None
+    return fields
+
+
+def _enrich_memo_fields(fields: dict) -> dict:
+    """MEMO 타입 보강 — 제목 자동 생성 + 사진 삭제"""
+    fields.setdefault("keep_photo", False)       # 메모는 사진 삭제
+    # 제목이 없으면 body 앞 30자로 자동 생성
+    if not fields.get("title") and fields.get("body"):
+        body = fields["body"]
+        fields["title"] = body[:30] + ("..." if len(body) > 30 else "")
+    return fields
+
+
 def validate_result(result: dict) -> dict:
     """
     LLM 응답을 검증하고 부족한 부분을 표시.
@@ -72,6 +158,18 @@ def validate_result(result: dict) -> dict:
                 all_missing.extend(item_missing)
 
     result["missing_fields"] = all_missing
+
+    # 3.5) 타입별 보강 필드 자동 채움
+    rtype = result["type"]
+    for item in targets:
+        if rtype == "SCHEDULE":
+            _enrich_schedule_fields(item)
+        elif rtype == "PLACE":
+            _enrich_place_fields(item)
+        elif rtype == "WISHLIST":
+            _enrich_wishlist_fields(item)
+        elif rtype == "MEMO":
+            _enrich_memo_fields(item)
 
     # 4) 상태 결정
     if all_missing:
