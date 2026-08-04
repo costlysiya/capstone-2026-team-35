@@ -1842,15 +1842,7 @@ class HomeScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => ref.read(currentMenuProvider.notifier).state = 'home',
-        backgroundColor: SoseangTheme.scheduleDark,
-        foregroundColor: Colors.white,
-        elevation: 2,
-        shape: const CircleBorder(),
-        child: const Icon(Icons.add, size: 32),
-      ),
+
       appBar: AppBar(
         title: Text(appBarTitle),
         centerTitle: true,
@@ -2953,8 +2945,12 @@ class HomeScreen extends ConsumerWidget {
         ],
       ),
       ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
+      bottomNavigationBar: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            decoration: BoxDecoration(
           color: SoseangTheme.ivory,
           border: const Border(top: BorderSide(color: SoseangTheme.border, width: 1)),
           boxShadow: [
@@ -3026,6 +3022,30 @@ class HomeScreen extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+          Positioned(
+            child: InkWell(
+              onTap: () => ref.read(currentMenuProvider.notifier).state = 'home',
+              borderRadius: BorderRadius.circular(28),
+              child: Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: SoseangTheme.scheduleDark,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.add, color: Colors.white, size: 32),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
