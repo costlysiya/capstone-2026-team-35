@@ -3000,6 +3000,7 @@ class HomeScreen extends ConsumerWidget {
             ),
             const BottomNavigationBarItem(
               icon: SizedBox(height: 24),
+              activeIcon: SizedBox(height: 40),
               label: '',
             ),
             BottomNavigationBarItem(
@@ -3031,7 +3032,7 @@ class HomeScreen extends ConsumerWidget {
                 width: 50,
                 height: 50,
                 decoration: BoxDecoration(
-                  color: SoseangTheme.scheduleDark,
+                  color: themeDark,
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
