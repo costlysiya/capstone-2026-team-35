@@ -121,10 +121,21 @@ def _enrich_wishlist_fields(fields: dict) -> dict:
 def _enrich_memo_fields(fields: dict) -> dict:
     """MEMO 타입 보강 — 제목 자동 생성 + 사진 삭제"""
     fields.setdefault("keep_photo", False)       # 메모는 사진 삭제
-    # 제목이 없으면 body 앞 30자로 자동 생성
-    if not fields.get("title") and fields.get("body"):
-        body = fields["body"]
-        fields["title"] = body[:30] + ("..." if len(body) > 30 else "")
+    
+    # 제목 최우선순위: 서브 타입별 고유 제목 필드
+    if not fields.get("title"):
+        if fields.get("book_title"):         # NOVEL
+            fields["title"] = fields["book_title"]
+        elif fields.get("recipe_name"):      # RECIPE
+            fields["title"] = fields["recipe_name"]
+        elif fields.get("headline"):         # ARTICLE
+            fields["title"] = fields["headline"]
+        elif fields.get("label"):            # QR_CODE
+            fields["title"] = fields["label"]
+        elif fields.get("body"):             # 기본 폴백
+            body = fields["body"]
+            fields["title"] = body[:30] + ("..." if len(body) > 30 else "")
+            
     return fields
 
 
