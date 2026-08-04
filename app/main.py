@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import init_db
-from app.routers import analyze, results
+from app.routers import analyze, results, notifications
 
 app = FastAPI(
     title="소생 앱 API",
@@ -25,6 +25,7 @@ def startup():
 # 라우터 연결
 app.include_router(analyze.router)
 app.include_router(results.router)
+app.include_router(notifications.router)
 
 @app.get("/")
 def health():

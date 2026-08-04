@@ -26,6 +26,13 @@ class AnalyzeRequest(BaseModel):
             }
         }
 
+class ClassifyResponse(BaseModel):
+    """분류 전용 결과 응답"""
+    index: int
+    type: str
+    confidence: float
+    reasoning: str
+
 class AnalyzeResponse(BaseModel):
     """서버 → 앱 응답"""
     id: Optional[int] = None
@@ -49,6 +56,7 @@ class ResultDetailResponse(BaseModel):
     status: str
     created_at: str | None = None
     updated_at: str | None = None
+    ical_string: str | None = None
 
 class BatchAnalyzeRequest(BaseModel):
     """배치 분석 요청 — 복수 이미지를 한 번에"""
@@ -71,6 +79,10 @@ class BatchAnalyzeResponse(BaseModel):
     failed: int
     results: list[AnalyzeResponse]
     errors: list[dict] = []
+class BatchClassifyResponse(BaseModel):
+    """묶음 분류 전용 응답"""
+    total: int
+    results: list[ClassifyResponse]
 
 class BatchAsyncResponse(BaseModel):
     """비동기 배치 분석 접수 응답"""
@@ -87,4 +99,15 @@ class BatchStatusResponse(BaseModel):
     failed: int
     results: list[AnalyzeResponse] = []
     errors: list[dict] = []
->>>>>>> origin/main
+
+
+class TokenRequest(BaseModel):
+    device_token: str
+
+class NotificationResponse(BaseModel):
+    id: int
+    title: str
+    body: str
+    result_id: int | None
+    is_read: bool
+    created_at: str
