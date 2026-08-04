@@ -822,9 +822,23 @@ class HomeScreen extends ConsumerWidget {
       ).timeout(const Duration(seconds: 15));
       
       if (response.statusCode == 200 && response.data != null) {
-        final data = response.data;
-        final typeStr = data['type'] as String;
-        final fields = data['fields'] as Map<String, dynamic>;
+        final rawData = response.data;
+        final List<dynamic> dataList = rawData is List ? rawData : [rawData];
+        if (dataList.isEmpty) return;
+
+        final firstData = dataList.first as Map<String, dynamic>;
+        final typeStr = firstData['type'] as String;
+        final firstFields = firstData['fields'] as Map<String, dynamic>;
+
+        final Map<String, dynamic> aiFieldsToSave = Map<String, dynamic>.from(firstFields);
+        if (dataList.length > 1) {
+          aiFieldsToSave['items'] = dataList.map((item) {
+            final f = Map<String, dynamic>.from(item['fields'] as Map<String, dynamic>);
+            f['type'] = item['type'];
+            if (item['id'] != null) f['id'] = item['id'];
+            return f;
+          }).toList();
+        }
 
         final typeToIndex = {
           'SCHEDULE': 0,
@@ -838,19 +852,15 @@ class HomeScreen extends ConsumerWidget {
         String newTitle = '새로운 메모';
         String newSchedule = '';
         String newPlace = '';
+        String newContent = '';
 
         // 1. SCHEDULE 매핑
-        String newContent = '';
         if (categoryIndex == 0) {
-          final subType = fields['sub_type'] as String?;
+          final subType = firstFields['sub_type'] as String?;
           final isGifticon = subType == 'GIFTICON' || 
-                             (fields['exchange_place'] != null) ||
+                             (firstFields['exchange_place'] != null) ||
                              maskedText.contains('기프티콘') || 
                              maskedText.contains('쿠폰');
-          final isSubscription = subType == 'SUBSCRIPTION' ||
-                                 maskedText.contains('구독') ||
-                                 maskedText.contains('정기결제') ||
-                                 maskedText.contains('결제일');
                              
           if (isGifticon) {
             subCategoryIndex = 1;
@@ -858,33 +868,32 @@ class HomeScreen extends ConsumerWidget {
             subCategoryIndex = 0;
           }
           
-          newTitle = fields['title'] ?? '새로운 일정';
-          newContent = fields['content'] ?? fields['memo'] ?? fields['description'] ?? '';
-          
-          final expiryDate = fields['expires_at'] as String?;
-          final startDate = fields['start_at'] as String?;
+          newTitle = firstFields['title'] ?? '새로운 일정';
+          newContent = firstFields['content'] ?? firstFields['memo'] ?? firstFields['description'] ?? '';
+          final expiryDate = firstFields['expires_at'] as String?;
+          final startDate = firstFields['start_at'] as String?;
           newSchedule = expiryDate ?? startDate ?? '';
         }
         // 2. PLACE 매핑
         else if (categoryIndex == 1) {
-          Map<String, dynamic> placeFields = fields;
-          if (fields['items'] != null && (fields['items'] as List).isNotEmpty) {
-            placeFields = (fields['items'] as List).first as Map<String, dynamic>;
+          Map<String, dynamic> placeFields = firstFields;
+          if (firstFields['items'] != null && (firstFields['items'] as List).isNotEmpty) {
+            placeFields = (firstFields['items'] as List).first as Map<String, dynamic>;
           }
           newTitle = placeFields['name'] ?? '새로운 장소';
           newPlace = placeFields['address'] ?? placeFields['region'] ?? '';
         }
         // 3. WISHLIST 매핑
         else if (categoryIndex == 2) {
-          Map<String, dynamic> itemFields = fields;
-          if (fields['items'] != null && (fields['items'] as List).isNotEmpty) {
-            itemFields = (fields['items'] as List).first as Map<String, dynamic>;
+          Map<String, dynamic> itemFields = firstFields;
+          if (firstFields['items'] != null && (firstFields['items'] as List).isNotEmpty) {
+            itemFields = (firstFields['items'] as List).first as Map<String, dynamic>;
           }
           newTitle = itemFields['product_name'] ?? '새로운 위시 상품';
         }
         // 4. MEMO 매핑
         else if (categoryIndex == 3) {
-          newTitle = fields['title'] ?? '새로운 메모';
+          newTitle = firstFields['title'] ?? '새로운 메모';
         }
 
         // 캐시 업데이트: 다른 탭으로 이동해도 결과가 유지되도록 draft 전체에 저장
@@ -892,7 +901,7 @@ class HomeScreen extends ConsumerWidget {
         if (cacheMap2.containsKey(image.path)) {
           cacheMap2[image.path] = cacheMap2[image.path]!.copyWith(
             aiStatus: 'success',
-            aiFields: fields,
+            aiFields: aiFieldsToSave,
             category: categoryIndex,
             subCategory: subCategoryIndex,
             title: newTitle,
@@ -1028,9 +1037,23 @@ class HomeScreen extends ConsumerWidget {
       ).timeout(const Duration(seconds: 15));
       
       if (response.statusCode == 200 && response.data != null) {
-        final data = response.data;
-        final typeStr = data['type'] as String;
-        final fields = data['fields'] as Map<String, dynamic>;
+        final rawData = response.data;
+        final List<dynamic> dataList = rawData is List ? rawData : [rawData];
+        if (dataList.isEmpty) return;
+
+        final firstData = dataList.first as Map<String, dynamic>;
+        final typeStr = firstData['type'] as String;
+        final firstFields = firstData['fields'] as Map<String, dynamic>;
+
+        final Map<String, dynamic> aiFieldsToSave = Map<String, dynamic>.from(firstFields);
+        if (dataList.length > 1) {
+          aiFieldsToSave['items'] = dataList.map((item) {
+            final f = Map<String, dynamic>.from(item['fields'] as Map<String, dynamic>);
+            f['type'] = item['type'];
+            if (item['id'] != null) f['id'] = item['id'];
+            return f;
+          }).toList();
+        }
 
         final typeToIndex = {'SCHEDULE': 0, 'PLACE': 1, 'WISHLIST': 2, 'MEMO': 3};
         final categoryIndex = typeToIndex[typeStr] ?? 3;
@@ -1041,33 +1064,33 @@ class HomeScreen extends ConsumerWidget {
         String newPlace = '';
 
         if (categoryIndex == 0) {
-          final subType = fields['sub_type'] as String?;
-          final isGifticon = subType == 'GIFTICON' || (fields['exchange_place'] != null) ||
+          final subType = firstFields['sub_type'] as String?;
+          final isGifticon = subType == 'GIFTICON' || (firstFields['exchange_place'] != null) ||
                              maskedText.contains('기프티콘') || maskedText.contains('쿠폰');
           subCategoryIndex = isGifticon ? 1 : 0;
-          newTitle = fields['title'] ?? '새로운 일정';
-          newSchedule = (fields['expires_at'] as String?) ?? (fields['start_at'] as String?) ?? '';
+          newTitle = firstFields['title'] ?? '새로운 일정';
+          newSchedule = (firstFields['expires_at'] as String?) ?? (firstFields['start_at'] as String?) ?? '';
         }
         else if (categoryIndex == 1) {
-          Map<String, dynamic> placeFields = fields;
-          if (fields['items'] != null && (fields['items'] as List).isNotEmpty) placeFields = (fields['items'] as List).first;
+          Map<String, dynamic> placeFields = firstFields;
+          if (firstFields['items'] != null && (firstFields['items'] as List).isNotEmpty) placeFields = (firstFields['items'] as List).first;
           newTitle = placeFields['name'] ?? '새로운 장소';
           newPlace = placeFields['address'] ?? placeFields['region'] ?? '';
         }
         else if (categoryIndex == 2) {
-          Map<String, dynamic> itemFields = fields;
-          if (fields['items'] != null && (fields['items'] as List).isNotEmpty) itemFields = (fields['items'] as List).first;
+          Map<String, dynamic> itemFields = firstFields;
+          if (firstFields['items'] != null && (firstFields['items'] as List).isNotEmpty) itemFields = (firstFields['items'] as List).first;
           newTitle = itemFields['product_name'] ?? '새로운 위시 상품';
         }
         else if (categoryIndex == 3) {
-          newTitle = fields['title'] ?? '새로운 메모';
+          newTitle = firstFields['title'] ?? '새로운 메모';
         }
 
         final cacheMap2 = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
         if (cacheMap2.containsKey(imagePath)) {
           cacheMap2[imagePath] = cacheMap2[imagePath]!.copyWith(
             aiStatus: 'success',
-            aiFields: fields,
+            aiFields: aiFieldsToSave,
             category: categoryIndex,
             subCategory: subCategoryIndex,
             title: newTitle,
@@ -1211,17 +1234,25 @@ class HomeScreen extends ConsumerWidget {
           if (i == safeCurrentIdx) {
             itemTitle = title;
             itemExtraInfo = extraInfo;
+            itemContent = content;
           } else {
             // 다른 항목들은 aiFields 내부 값으로 초기화
             if (categoryId == 1) { // PLACE
               itemTitle = item['name']?.toString() ?? '제목 없음';
               itemExtraInfo = item['address']?.toString() ?? item['region']?.toString() ?? '';
+              itemContent = item['content']?.toString() ?? content;
             } else if (categoryId == 2) { // WISHLIST
               itemTitle = item['product_name']?.toString() ?? '제목 없음';
               itemExtraInfo = item['price_amount']?.toString() ?? '';
-            } else {
+              itemContent = item['content']?.toString() ?? content;
+            } else if (categoryId == 3) { // MEMO
               itemTitle = item['title']?.toString() ?? item['name']?.toString() ?? '제목 없음';
               itemExtraInfo = extraInfo;
+              itemContent = item['content']?.toString() ?? item['body']?.toString() ?? content;
+            } else { // SCHEDULE
+              itemTitle = item['title']?.toString() ?? item['name']?.toString() ?? '제목 없음';
+              itemExtraInfo = item['expires_at']?.toString() ?? item['start_at']?.toString() ?? '';
+              itemContent = item['content']?.toString() ?? item['memo']?.toString() ?? item['description']?.toString() ?? content;
             }
           }
 
@@ -3352,20 +3383,41 @@ class DynamicFeaturesCard extends ConsumerWidget {
   }
 
   void _syncActiveItemControllers(WidgetRef ref, Map<String, dynamic> item, int categoryIndex) {
-    if (categoryIndex == 1) { // PLACE
+    if (categoryIndex == 0) { // SCHEDULE
+      item['title'] = ref.read(titleControllerProvider).text;
+      item['expires_at'] = ref.read(scheduleDateProvider).text;
+      item['content'] = ref.read(contentControllerProvider).text;
+    } else if (categoryIndex == 1) { // PLACE
       item['name'] = ref.read(titleControllerProvider).text;
       item['address'] = ref.read(placeLocationProvider).text;
+      item['content'] = ref.read(contentControllerProvider).text;
     } else if (categoryIndex == 2) { // WISHLIST
       item['product_name'] = ref.read(titleControllerProvider).text;
+      item['content'] = ref.read(contentControllerProvider).text;
+    } else if (categoryIndex == 3) { // MEMO
+      item['title'] = ref.read(titleControllerProvider).text;
+      item['content'] = ref.read(contentControllerProvider).text;
     }
   }
 
   void _updateActiveItemControllers(WidgetRef ref, Map<String, dynamic> item, int categoryIndex) {
-    if (categoryIndex == 1) { // PLACE
+    // 모든 항목은 현재 선택된 카테고리와 동일하게 취급 (사용자 전제조건 반영)
+    final itemCategory = categoryIndex;
+
+    if (itemCategory == 0) { // SCHEDULE
+      ref.read(titleControllerProvider).text = item['title'] ?? '';
+      ref.read(scheduleDateProvider).text = (item['expires_at'] as String?) ?? (item['start_at'] as String?) ?? '';
+      ref.read(contentControllerProvider).text = item['content'] ?? item['memo'] ?? item['description'] ?? '';
+    } else if (itemCategory == 1) { // PLACE
       ref.read(titleControllerProvider).text = item['name'] ?? '';
       ref.read(placeLocationProvider).text = item['address'] ?? item['region'] ?? '';
-    } else if (categoryIndex == 2) { // WISHLIST
+      ref.read(contentControllerProvider).text = item['content'] ?? '';
+    } else if (itemCategory == 2) { // WISHLIST
       ref.read(titleControllerProvider).text = item['product_name'] ?? '';
+      ref.read(contentControllerProvider).text = item['content'] ?? '';
+    } else if (itemCategory == 3) { // MEMO
+      ref.read(titleControllerProvider).text = item['title'] ?? '';
+      ref.read(contentControllerProvider).text = item['content'] ?? item['body'] ?? '';
     }
   }
 }
