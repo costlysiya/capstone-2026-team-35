@@ -234,16 +234,27 @@ class MaskingHelper {
       line = line.replaceAllMapped(accountRegex, (match) => _maskDigits(match.group(0)!));
 
       // --- 휴대폰 번호 (Phone Number) ---
-      // Pattern: 010-[0-9]{3,4}-[0-9]{4}|010[0-9]{7,8}
-      final phoneRegex = RegExp(r'\b010-\d{3,4}-\d{4}\b|\b010\d{7,8}\b');
+      // Pattern: 010-XXXX-XXXX or 010XXXXXXXX
+      final phoneRegex = RegExp(r'(?:^|[^0-9])(010-\d{3,4}-\d{4}|010\d{7,8})(?:[^0-9]|$)');
       line = line.replaceAllMapped(phoneRegex, (match) {
-        final val = match.group(0)!;
+        final val = match.group(1)!;
+        String maskedVal;
         if (val.contains('-')) {
           final parts = val.split('-');
-          return '010-${'*' * parts[1].length}-${'*' * parts[2].length}';
+          maskedVal = '010-${'*' * parts[1].length}-${'*' * parts[2].length}';
         } else {
-          return '010${'*' * (val.length - 3)}';
+          maskedVal = '010${'*' * (val.length - 3)}';
         }
+        return match.group(0)!.replaceFirst(val, maskedVal);
+      });
+
+      // --- 예매/예약 번호 (Reservation/Ticket Number) ---
+      final reservationRegex = RegExp(r'(예매번호|예약번호|티켓번호|예매|예약|티켓)\s*[:\-]?\s*([A-Za-z0-9]{6,15})\b');
+      line = line.replaceAllMapped(reservationRegex, (match) {
+        final keyword = match.group(1)!;
+        final resNum = match.group(2)!;
+        final separator = match.group(0)!.substring(keyword.length, match.group(0)!.length - resNum.length);
+        return '$keyword$separator${'*' * resNum.length}';
       });
 
       // --- 여권 관련 날짜 마스킹 (여권 정보 검출되었을 때만) ---
@@ -381,8 +392,14 @@ class MaskingHelper {
     }
 
     // --- 3. 휴대폰 번호 검사 ---
-    final phoneRegex = RegExp(r'\b010-\d{3,4}-\d{4}\b');
+    final phoneRegex = RegExp(r'(?:^|[^0-9])(010-\d{3,4}-\d{4}|010\d{7,8})(?:[^0-9]|$)');
     if (phoneRegex.hasMatch(text)) {
+      score += 5;
+    }
+
+    // --- 3.5. 예매/예약 번호 검사 ---
+    final reservationRegex = RegExp(r'(예매번호|예약번호|티켓번호|예매|예약|티켓)\s*[:\-]?\s*([A-Za-z0-9]{6,15})\b');
+    if (reservationRegex.hasMatch(text)) {
       score += 5;
     }
 
@@ -430,5 +447,133 @@ class MaskingHelper {
 
     print('🛡️ 민감 정보 평가 점수: $score (임계값: 5)');
     return score >= 5;
+  }
+
+  static Map<String, List<String>> extractOriginalSensitiveInfo(String text) {
+    Map<String, List<String>> info = {
+      'rrn': [],
+      'card': [],
+      'cvc': [],
+      'phone': [],
+      'account': [],
+      'passport': [],
+      'license': [],
+      'coupon': [],
+      'reservation': [],
+    };
+
+    if (text.trim().isEmpty) return info;
+
+    // RRN (주민등록번호)
+    final rrnRegex = RegExp(r'\b\d{6}-[1-4]\d{6}\b|\b\d{6}\s?[1-4]\d{6}\b');
+    info['rrn']!.addAll(rrnRegex.allMatches(text).map((m) => m.group(0)!));
+
+    // Card (카드번호)
+    final cardRegex = RegExp(r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b');
+    info['card']!.addAll(cardRegex.allMatches(text).map((m) => m.group(0)!));
+
+    // CVC
+    final cvcRegex = RegExp(r'(CVC|CVV|보안코드|보안\s?카드)\s*[:.\-]?\s*([0-9]{3})\b', caseSensitive: false);
+    info['cvc']!.addAll(cvcRegex.allMatches(text).map((m) => m.group(2)!));
+
+    // Phone (휴대폰번호)
+    final phoneRegex = RegExp(r'(?:^|[^0-9])(010-\d{3,4}-\d{4}|010\d{7,8})(?:[^0-9]|$)');
+    info['phone']!.addAll(phoneRegex.allMatches(text).map((m) => m.group(1)!));
+
+    // Account (계좌번호)
+    final accountRegex = RegExp(r'\b\d{3,6}-\d{2,6}-\d{3,6}\b');
+    final dateRegex = RegExp(r'\b\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}\b');
+    for (var match in accountRegex.allMatches(text)) {
+      final matchedStr = match.group(0)!;
+      if (!dateRegex.hasMatch(matchedStr)) {
+        info['account']!.add(matchedStr);
+      }
+    }
+
+    // Reservation (예매/예약 번호)
+    final reservationRegex = RegExp(r'(예매번호|예약번호|티켓번호|예매|예약|티켓)\s*[:\-]?\s*([A-Za-z0-9]{6,15})\b');
+    info['reservation']!.addAll(reservationRegex.allMatches(text).map((m) => m.group(2)!));
+
+    // Passport (여권번호) - 여권 관련 키워드가 있을 경우에만 추출
+    final lowerText = text.toLowerCase();
+    final hasPassportKeywords = ['여권', 'passport', '여권번호', 'passport no'].any((k) => lowerText.contains(k));
+    if (hasPassportKeywords || lowerText.contains('<<<<') || lowerText.contains('<<<')) {
+      final passportNoRegex = RegExp(r'\b[A-Z]\s?[A-Z0-9]{8}\b', caseSensitive: false);
+      info['passport']!.addAll(passportNoRegex.allMatches(text).map((m) => m.group(0)!));
+    }
+
+    // License (운전면허증 번호)
+    final licenseRegex = RegExp(r'\b(\d{2}|서울|부산|경기|강원|충북|충남|전북|전남|경북|경남|제주|인천|대구|대전|울산|광주)[-\s]?\d{2}[-\s]?\d{6}[-\s]?\d{2}\b');
+    info['license']!.addAll(licenseRegex.allMatches(text).map((m) => m.group(0)!));
+
+    // Coupon (기프티콘/바코드 등 쿠폰번호)
+    final couponRegex = RegExp(r'\b\d{12}\b|\b\d{14}\b|\b\d{16}\b');
+    info['coupon']!.addAll(couponRegex.allMatches(text).map((m) => m.group(0)!));
+
+    // 빈 리스트 제거
+    info.removeWhere((key, value) => value.isEmpty);
+
+    return info;
+  }
+
+  static String unmask(String text, Map<String, dynamic>? originalInfo) {
+    if (originalInfo == null) return text;
+    String unmaskedText = text;
+
+    List<String> getList(String key) {
+      if (originalInfo[key] is List) {
+        return (originalInfo[key] as List).map((e) => e.toString()).toList();
+      }
+      return [];
+    }
+
+    // 1. RRN
+    final rrnList = getList('rrn');
+    for (final original in rrnList) {
+      unmaskedText = unmaskedText.replaceAll('******-*******', original);
+    }
+
+    // 2. Card, Account, Coupon, License
+    final digitsList = [
+      ...getList('card'),
+      ...getList('account'),
+      ...getList('coupon'),
+      ...getList('license'),
+    ];
+    for (final original in digitsList) {
+      final masked = _maskDigits(original);
+      unmaskedText = unmaskedText.replaceAll(masked, original);
+    }
+
+    // 3. Phone
+    final phoneList = getList('phone');
+    for (final original in phoneList) {
+      String masked;
+      if (original.contains('-')) {
+        final parts = original.split('-');
+        masked = '010-${'*' * parts[1].length}-${'*' * parts[2].length}';
+      } else {
+        masked = '010${'*' * (original.length - 3)}';
+      }
+      unmaskedText = unmaskedText.replaceAll(masked, original);
+    }
+
+    // 4. CVC
+    final cvcList = getList('cvc');
+    for (final original in cvcList) {
+      unmaskedText = unmaskedText.replaceAll('***', original);
+    }
+
+    // 5. Passport & Reservation (length-based asterisks)
+    final asteriskList = [
+      ...getList('passport'),
+      ...getList('reservation'),
+    ];
+    for (final original in asteriskList) {
+      final masked = '*' * original.length;
+      unmaskedText = unmaskedText.replaceAll(masked, original);
+    }
+
+    return unmaskedText;
   }
 }

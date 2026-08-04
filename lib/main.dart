@@ -125,6 +125,7 @@ class OcrDraft {
   final String scheduleDate;
   final String placeLocation;
   final Map<String, dynamic>? aiFields;
+  final Map<String, dynamic>? originalSensitiveInfo;
 
   final String aiStatus; // 'idle', 'loading', 'success', 'error'
 
@@ -139,6 +140,7 @@ class OcrDraft {
     this.scheduleDate = '',
     this.placeLocation = '',
     this.aiFields,
+    this.originalSensitiveInfo,
     this.aiStatus = 'idle',
   });
 
@@ -152,6 +154,7 @@ class OcrDraft {
     String? scheduleDate,
     String? placeLocation,
     Map<String, dynamic>? aiFields,
+    Map<String, dynamic>? originalSensitiveInfo,
     String? aiStatus,
   }) {
     return OcrDraft(
@@ -165,10 +168,14 @@ class OcrDraft {
       scheduleDate: scheduleDate ?? this.scheduleDate,
       placeLocation: placeLocation ?? this.placeLocation,
       aiFields: aiFields ?? this.aiFields,
+      originalSensitiveInfo: originalSensitiveInfo ?? this.originalSensitiveInfo,
       aiStatus: aiStatus ?? this.aiStatus,
     );
   }
 }
+
+// 사용자의 민감정보 원본 로컬 DB 보관 여부 설정
+final saveOriginalInfoProvider = StateProvider<bool>((ref) => false);
 
 // 캐시 및 백그라운드 큐 관리 프로바이더
 final draftCacheProvider = StateProvider<Map<String, OcrDraft>>((ref) => {});
@@ -205,7 +212,7 @@ final placeLocationProvider = Provider((ref) => TextEditingController());
 final savedCardsProvider = StateProvider<List<Map<String, dynamic>>>((ref) => []);
 
 // 장소 탭 전용 상태
-final placeRegionProvider = StateProvider<String>((ref) => '전체');
+final placeRegionProvider = StateProvider<Set<String>>((ref) => {});
 final placeSearchProvider = StateProvider<String>((ref) => '');
 
 // 🗓️ 캘린더 관련 상태 (일정 보관함)
@@ -687,35 +694,63 @@ class HomeScreen extends ConsumerWidget {
       proceed = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.warning, color: Colors.orange),
-              SizedBox(width: 8),
-              Text('개인정보 포함 감지'),
-            ],
-          ),
-          content: const Text(
-            '분석할 텍스트 내에 개인정보(주민등록번호, 카드 번호, 바코드 등)로 의심되는 패턴이 감지되었습니다.\n\nAI 분석 서버로 전송하여 자동 구조화 과정을 진행할까요?\n(보안 전송을 위해 민감 데이터는 서버 전송 전 기기 내에서 자동 마스킹 치환됩니다.)'
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('취소', style: TextStyle(color: Colors.grey)),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-              child: const Text('마스킹 후 전송'),
-            ),
-          ],
-        ),
+        builder: (context) {
+          return StatefulBuilder(
+            builder: (context, setState) {
+              final isSaving = ref.watch(saveOriginalInfoProvider);
+              return AlertDialog(
+                title: const Row(
+                  children: [
+                    Icon(Icons.warning, color: Colors.orange),
+                    SizedBox(width: 8),
+                    Text('개인정보 포함 감지'),
+                  ],
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('분석할 텍스트 내에 개인정보(주민등록번호, 카드 번호, 바코드 등)로 의심되는 패턴이 감지되었습니다.\n\nAI 분석 서버로 전송하여 자동 구조화 과정을 진행할까요?\n(보안 전송을 위해 민감 데이터는 서버 전송 전 기기 내에서 자동 마스킹 치환됩니다.)'),
+                    const SizedBox(height: 16),
+                    CheckboxListTile(
+                      value: isSaving,
+                      onChanged: (val) {
+                        setState(() {
+                          ref.read(saveOriginalInfoProvider.notifier).state = val ?? false;
+                        });
+                      },
+                      title: const Text('원본 정보 기기 내 안전 보관 허용 (로컬 전용)', style: TextStyle(fontSize: 14)),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      contentPadding: EdgeInsets.zero,
+                      activeColor: Colors.orange,
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('취소', style: TextStyle(color: Colors.grey)),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                    child: const Text('마스킹 후 전송'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
       ) ?? false;
     }
 
     if (!proceed) return;
 
-    // 2. 서버 전송 전 익명화 마스킹 수행
+    // 2. 서버 전송 전 익명화 마스킹 수행 및 원본 추출 (옵션)
+    Map<String, dynamic>? originalInfo;
+    if (ref.read(saveOriginalInfoProvider)) {
+      originalInfo = MaskingHelper.extractOriginalSensitiveInfo(rawText);
+    }
+    
     final maskedText = MaskingHelper.mask(rawText);
     ref.read(extractedTextProvider.notifier).state = maskedText;
 
@@ -749,7 +784,10 @@ class HomeScreen extends ConsumerWidget {
     // 4. API 서버 연동 및 카테고리 기기 분류 주입
     final cacheMap = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
     if (cacheMap.containsKey(image.path)) {
-      cacheMap[image.path] = cacheMap[image.path]!.copyWith(aiStatus: 'loading');
+      cacheMap[image.path] = cacheMap[image.path]!.copyWith(
+        aiStatus: 'loading',
+        originalSensitiveInfo: originalInfo,
+      );
       ref.read(draftCacheProvider.notifier).state = cacheMap;
     }
     try {
@@ -794,15 +832,26 @@ class HomeScreen extends ConsumerWidget {
         String newPlace = '';
 
         // 1. SCHEDULE 매핑
+        String newContent = '';
         if (categoryIndex == 0) {
           final subType = fields['sub_type'] as String?;
           final isGifticon = subType == 'GIFTICON' || 
                              (fields['exchange_place'] != null) ||
                              maskedText.contains('기프티콘') || 
                              maskedText.contains('쿠폰');
+          final isSubscription = subType == 'SUBSCRIPTION' ||
+                                 maskedText.contains('구독') ||
+                                 maskedText.contains('정기결제') ||
+                                 maskedText.contains('결제일');
                              
-          subCategoryIndex = isGifticon ? 1 : 0;
+          if (isGifticon) {
+            subCategoryIndex = 1;
+          } else {
+            subCategoryIndex = 0;
+          }
+          
           newTitle = fields['title'] ?? '새로운 일정';
+          newContent = fields['content'] ?? fields['memo'] ?? fields['description'] ?? '';
           
           final expiryDate = fields['expires_at'] as String?;
           final startDate = fields['start_at'] as String?;
@@ -855,6 +904,9 @@ class HomeScreen extends ConsumerWidget {
           ref.read(titleControllerProvider).text = newTitle;
           ref.read(scheduleDateProvider).text = newSchedule;
           ref.read(placeLocationProvider).text = newPlace;
+          if (newContent.isNotEmpty) {
+            ref.read(contentControllerProvider).text = newContent;
+          }
         }
 
         print('🎯 AI 로컬 서버 분류 성공: $typeStr (Index: $categoryIndex)');
@@ -1075,8 +1127,8 @@ class HomeScreen extends ConsumerWidget {
 
   // 수정본 보관함 최종 저장 분기 로직
   Future<void> _saveCurrentCardAndRemoveFromQueue(BuildContext context, WidgetRef ref) async {
-    final title = ref.read(titleControllerProvider).text;
-    final content = ref.read(contentControllerProvider).text;
+    String title = ref.read(titleControllerProvider).text;
+    String content = ref.read(contentControllerProvider).text;
     final categoryId = ref.read(selectedCategoryProvider);
     final subCategoryId = ref.read(selectedSubCategoryProvider); 
     final images = ref.read(pickedImagesProvider);
@@ -1129,7 +1181,9 @@ class HomeScreen extends ConsumerWidget {
       };
       
       final activePath = images[activeIndex].path;
-      final aiFields = ref.read(draftCacheProvider)[activePath]?.aiFields;
+      final activeDraft = ref.read(draftCacheProvider)[activePath];
+      final aiFields = activeDraft?.aiFields;
+      final originalSensitiveInfo = activeDraft?.originalSensitiveInfo;
       
       final bool hasItems = aiFields != null && aiFields.containsKey('items') && aiFields['items'] is List && (aiFields['items'] as List).isNotEmpty;
       final List<dynamic> items = hasItems ? (aiFields['items'] as List) : [];
@@ -1163,11 +1217,18 @@ class HomeScreen extends ConsumerWidget {
             }
           }
 
+          if (originalSensitiveInfo != null) {
+            itemTitle = MaskingHelper.unmask(itemTitle, originalSensitiveInfo);
+            itemContent = MaskingHelper.unmask(itemContent, originalSensitiveInfo);
+            itemExtraInfo = MaskingHelper.unmask(itemExtraInfo, originalSensitiveInfo);
+          }
+
           final dbRow = {
             'type': indexToType[categoryId] ?? 'MEMO',
             'confidence': 1.0, 
             'fields': jsonEncode({
               ...item,
+              if (originalSensitiveInfo != null) 'original_sensitive_info': originalSensitiveInfo,
               'title': itemTitle,
               'content': itemContent,
               'extraInfo': itemExtraInfo,
@@ -1190,6 +1251,7 @@ class HomeScreen extends ConsumerWidget {
             'imagePath': finalImagePath, 
             'rawFields': {
               ...item,
+              if (originalSensitiveInfo != null) 'original_sensitive_info': originalSensitiveInfo,
               'title': itemTitle,
               'content': itemContent,
               'extraInfo': itemExtraInfo,
@@ -1200,11 +1262,18 @@ class HomeScreen extends ConsumerWidget {
           ref.read(savedCardsProvider.notifier).update((state) => [newCard, ...state]);
         }
       } else {
+        if (originalSensitiveInfo != null) {
+          title = MaskingHelper.unmask(title, originalSensitiveInfo);
+          content = MaskingHelper.unmask(content, originalSensitiveInfo);
+          extraInfo = MaskingHelper.unmask(extraInfo, originalSensitiveInfo);
+        }
+
         final dbRow = {
           'type': indexToType[categoryId] ?? 'MEMO',
           'confidence': 1.0, 
           'fields': jsonEncode({
             if (aiFields != null) ...aiFields,
+            if (originalSensitiveInfo != null) 'original_sensitive_info': originalSensitiveInfo,
             'title': title,
             'content': content,
             'extraInfo': extraInfo,
@@ -1227,6 +1296,7 @@ class HomeScreen extends ConsumerWidget {
           'imagePath': finalImagePath, 
           'rawFields': {
             if (aiFields != null) ...aiFields,
+            if (originalSensitiveInfo != null) 'original_sensitive_info': originalSensitiveInfo,
             'title': title,
             'content': content,
             'extraInfo': extraInfo,
@@ -2397,9 +2467,16 @@ class HomeScreen extends ConsumerWidget {
                                         if (!title.contains(searchStr) && !extra.contains(searchStr)) return false;
                                       }
                                       
-                                      if (region != '전체') {
+                                      if (region.isNotEmpty) {
                                         final extra = (c['extraInfo'] ?? '').toString();
-                                        if (!extra.contains(region)) return false;
+                                        bool regionMatched = false;
+                                        for (String r in region) {
+                                          if (extra.contains(r)) {
+                                            regionMatched = true;
+                                            break;
+                                          }
+                                        }
+                                        if (!regionMatched) return false;
                                       }
                                       return true;
                                     }
@@ -2500,32 +2577,93 @@ class HomeScreen extends ConsumerWidget {
                                             ),
                                           ),
                                           const SizedBox(height: 12),
-                                          // 지역 필터 칩들 (가로 스크롤)
-                                          SingleChildScrollView(
-                                            scrollDirection: Axis.horizontal,
-                                            child: Row(
-                                              children: ['전체', '서울', '부산', '대구', '인천', '광주', '대전', '울산', '경기', '강원', '충청', '전라', '경북', '경남', '제주'].map((region) {
-                                                int count = 0;
-                                                if (region == '전체') {
-                                                  count = savedCards.where((c) => c['categoryId'] == 1).length;
-                                                } else {
-                                                  count = savedCards.where((c) => c['categoryId'] == 1 && (c['extraInfo'] ?? '').toString().contains(region)).length;
+                                          // 다중 선택 지역 필터 드롭다운 버튼
+                                          Builder(
+                                            builder: (ctx) {
+                                              final selectedRegions = ref.watch(placeRegionProvider);
+                                              final allRegions = ['서울', '부산', '대구', '인천', '광주', '대전', '울산', '경기', '강원', '충청', '전라', '경북', '경남', '제주', '해외'];
+                                              String btnText = '전체';
+                                              if (selectedRegions.isNotEmpty) {
+                                                btnText = selectedRegions.first;
+                                                if (selectedRegions.length > 1) {
+                                                  btnText += ' 외 ${selectedRegions.length - 1}곳';
                                                 }
-                                                final isSelected = ref.watch(placeRegionProvider) == region;
-                                                return Padding(
-                                                  padding: const EdgeInsets.only(right: 6),
-                                                  child: ChoiceChip(
-                                                    label: Text('$region($count)', style: TextStyle(fontSize: 12, color: isSelected ? Colors.white : SoseangTheme.placeDark)),
-                                                    selected: isSelected,
-                                                    selectedColor: SoseangTheme.placeColor,
-                                                    backgroundColor: Colors.white,
-                                                    side: BorderSide(color: SoseangTheme.placeColor.withOpacity(0.5)),
-                                                    showCheckmark: false,
-                                                    onSelected: (_) => ref.read(placeRegionProvider.notifier).state = region,
+                                              }
+                                              return InkWell(
+                                                onTap: () {
+                                                  showDialog(
+                                                    context: context,
+                                                    builder: (dCtx) {
+                                                      final currentSelected = Set<String>.from(ref.read(placeRegionProvider));
+                                                      return StatefulBuilder(
+                                                        builder: (context, setState) {
+                                                          return AlertDialog(
+                                                            title: const Text('지역 다중 선택', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                                            contentPadding: const EdgeInsets.only(top: 12, bottom: 0),
+                                                            content: SizedBox(
+                                                              width: double.maxFinite,
+                                                              child: ListView.builder(
+                                                                shrinkWrap: true,
+                                                                itemCount: allRegions.length,
+                                                                itemBuilder: (context, index) {
+                                                                  final region = allRegions[index];
+                                                                  final count = savedCards.where((c) => c['categoryId'] == 1 && (c['extraInfo'] ?? '').toString().contains(region)).length;
+                                                                  return CheckboxListTile(
+                                                                    title: Text('$region ($count)', style: const TextStyle(fontSize: 14)),
+                                                                    value: currentSelected.contains(region),
+                                                                    activeColor: SoseangTheme.placeColor,
+                                                                    dense: true,
+                                                                    controlAffinity: ListTileControlAffinity.leading,
+                                                                    onChanged: (val) {
+                                                                      setState(() {
+                                                                        if (val == true) {
+                                                                          currentSelected.add(region);
+                                                                        } else {
+                                                                          currentSelected.remove(region);
+                                                                        }
+                                                                      });
+                                                                    },
+                                                                  );
+                                                                },
+                                                              ),
+                                                            ),
+                                                            actions: [
+                                                              TextButton(
+                                                                onPressed: () => setState(() => currentSelected.clear()),
+                                                                child: const Text('초기화', style: TextStyle(color: SoseangTheme.textMuted)),
+                                                              ),
+                                                              ElevatedButton(
+                                                                onPressed: () {
+                                                                  ref.read(placeRegionProvider.notifier).state = currentSelected;
+                                                                  Navigator.pop(dCtx);
+                                                                },
+                                                                style: ElevatedButton.styleFrom(backgroundColor: SoseangTheme.placeColor, foregroundColor: Colors.white),
+                                                                child: const Text('적용'),
+                                                              ),
+                                                            ],
+                                                          );
+                                                        },
+                                                      );
+                                                    }
+                                                  );
+                                                },
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.white,
+                                                    borderRadius: BorderRadius.circular(20),
+                                                    border: Border.all(color: SoseangTheme.placeColor.withOpacity(0.5)),
                                                   ),
-                                                );
-                                              }).toList(),
-                                            ),
+                                                  child: Row(
+                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    children: [
+                                                      Text(btnText, style: const TextStyle(fontSize: 14, color: SoseangTheme.placeDark)),
+                                                      const Icon(Icons.arrow_drop_down, color: SoseangTheme.placeColor),
+                                                    ],
+                                                  ),
+                                                ),
+                                              );
+                                            },
                                           ),
                                           const SizedBox(height: 12),
                                         ],
@@ -2668,9 +2806,16 @@ class HomeScreen extends ConsumerWidget {
                                         if (!title.contains(searchStr) && !extra.contains(searchStr)) return false;
                                       }
                                       
-                                      if (region != '전체') {
+                                      if (region.isNotEmpty) {
                                         final extra = (c['extraInfo'] ?? '').toString();
-                                        if (!extra.contains(region)) return false;
+                                        bool regionMatched = false;
+                                        for (String r in region) {
+                                          if (extra.contains(r)) {
+                                            regionMatched = true;
+                                            break;
+                                          }
+                                        }
+                                        if (!regionMatched) return false;
                                       }
                                       return true;
                                     }
