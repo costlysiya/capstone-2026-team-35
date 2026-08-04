@@ -1,7 +1,8 @@
 from fastapi import APIRouter, HTTPException, Query
 from app.database import (
     get_all_results, get_result_by_id, get_results_by_type,
-    get_results_by_status, update_status, update_fields, delete_result
+    get_results_by_status, update_status, update_fields, delete_result,
+    search_results
 )
 from app.schemas import ResultConfirmRequest
 import json
@@ -13,18 +14,23 @@ router = APIRouter(prefix="/api/results", tags=["결과"])
 @router.get("")
 def list_results(
     type: str | None = Query(None, description="타입 필터 (SCHEDULE, PLACE, WISHLIST, MEMO)"),
-    status: str | None = Query(None, description="상태 필터 (DRAFT, CONFIRMED, NEEDS_EDIT)")
+    status: str | None = Query(None, description="상태 필터 (DRAFT, CONFIRMED, NEEDS_EDIT)"),
+    q: str | None = Query(None, description="통합 검색어 (fields 내 텍스트 검색)"),
+    region: str | None = Query(None, description="지역 필터 (PLACE 전용, 예: '서울')"),
+    category: str | None = Query(None, description="카테고리 필터 (PLACE 전용, 예: '카페')"),
+    page: int = Query(1, description="페이지 번호 (1부터 시작)", ge=1),
+    limit: int = Query(20, description="페이지 당 항목 수", ge=1, le=100)
 ):
     """
-    저장된 분석 결과 목록 조회.
-    쿼리 파라미터로 타입, 상태 필터링 가능.
+    저장된 분석 결과 목록 조회 (검색 및 페이지네이션 지원).
     """
-    if type:
-        results = get_results_by_type(type)
-    elif status:
-        results = get_results_by_status(status)
-    else:
-        results = get_all_results()
+    offset = (page - 1) * limit
+    
+    search_data = search_results(
+        type=type, status=status, q=q, region=region, category=category, limit=limit, offset=offset
+    )
+    
+    results = search_data["items"]
 
     # fields가 JSON 문자열이므로 딕셔너리로 변환
     for r in results:
@@ -34,7 +40,12 @@ def list_results(
             except json.JSONDecodeError:
                 r["fields"] = {}
 
-    return results
+    return {
+        "total": search_data["total"],
+        "page": page,
+        "limit": limit,
+        "items": results
+    }
 
 
 @router.get("/{id}")
@@ -50,6 +61,11 @@ def get_result(id: int):
             result["fields"] = json.loads(result["fields"])
         except json.JSONDecodeError:
             result["fields"] = {}
+
+    # 확정된(CONFIRMED) 항목의 경우 불필요한 원본 데이터(body) 숨김 처리 (요구사항 반영)
+    if result.get("status") == "CONFIRMED" and result.get("type") == "MEMO":
+        if "body" in result["fields"]:
+            result["fields"]["body"] = "[AI 분석 완료 - 원문 숨김 처리됨]"
 
     return result
 
