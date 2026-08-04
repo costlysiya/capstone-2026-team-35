@@ -92,6 +92,14 @@ CLASSIFY_PROMPT = """당신은 스크린샷 OCR 텍스트를 분류하는 전문
 3. 상품/가격이 핵심이면 → WISHLIST
 4. 그 외 모두 → MEMO
 
+## Few-Shot 예제 (모범 답안)
+- 입력: "토요일 6시에 강남역 11번 출구 고기집 예약했어"
+  응답: {"type": "SCHEDULE", "confidence": 0.9, "reasoning": "장소가 언급되었으나 특정 일시(토요일 6시)의 예약/약속이 핵심임"}
+- 입력: "강남역 삼겹살 맛집 정리: 1. 흑돼지대통령 2. 하남돼지집"
+  응답: {"type": "PLACE", "confidence": 0.95, "reasoning": "특정 기한 없이 장소 리스트를 공유 및 기록하려는 목적임"}
+- 입력: "이 원피스 진짜 이쁘지 않냐? 39,000원이래"
+  응답: {"type": "WISHLIST", "confidence": 0.85, "reasoning": "특정 상품에 대한 구매 관심 및 가격 정보가 포함됨"}
+
 ## 응답 형식
 반드시 아래 JSON 형식으로만 응답하세요:
 {"type": "SCHEDULE|PLACE|WISHLIST|MEMO", "confidence": 0.0~1.0, "reasoning": "한 줄 판단 근거"}
@@ -138,7 +146,15 @@ SCHEDULE_PROMPT = """당신은 일정·기한·예약 정보를 정밀하게 추
 - 발신자/수신자 이름이 있으면 participants에 추가
 - "토요일 2시", "내일 저녁" 등 상대적 시간 표현은 그대로 기록
 
-JSON 형식으로만 응답:
+## Few-Shot 예제 (모범 답안)
+- 입력: "[스타벅스] 아이스 아메리카노 T\n교환처: 스타벅스 전매장\n유효기간: 2026년 12월 31일"
+  응답: {"fields": {"title": "아이스 아메리카노 T", "expires_at": "2026-12-31", "start_at": null, "exchange_place": "스타벅스 전매장", "sub_type": "GIFTICON"}, "missing_fields": []}
+- 입력: "다음주 목요일 오후 3시 팀 회의"
+  응답: {"fields": {"title": "팀 회의", "expires_at": null, "start_at": "다음주 목요일", "start_time": "15:00", "sub_type": "APPOINTMENT"}, "missing_fields": []}
+- 입력: "넷플릭스 프리미엄 결제일 2026.11.01"
+  응답: {"fields": {"title": "넷플릭스 프리미엄", "expires_at": "2026-11-01", "start_at": null, "recurrence": "매월", "sub_type": "SUBSCRIPTION"}, "missing_fields": []}
+
+JSON 형식으로만 응답 (반드시 fields 내부에 필드를 위치시킬 것):
 {"fields": {...}, "missing_fields": [...]}
 """
 
@@ -179,6 +195,12 @@ PLACE_PROMPT = """당신은 장소·지도·위치 정보를 정밀하게 추출
 - name 또는 region 중 하나는 반드시 추출
 - category는 위 목록 중 가장 가까운 것으로 정규화
 - 주소에서 "서울특별시"→"서울", "부산광역시"→"부산" 등 간소화
+
+## Few-Shot 예제 (모범 답안)
+- 입력: "1. 런던베이글뮤지엄 도산점 (종로구) 2. 카페 노티드 청담 (강남구)"
+  응답: {"fields": [{"name": "런던베이글뮤지엄 도산점", "region": "서울 종로구", "category": "베이커리"}, {"name": "카페 노티드 청담", "region": "서울 강남구", "category": "카페"}], "missing_fields": []}
+- 입력: "제주도 서귀포시 안덕면 사계남로 216번길 29 뷰스트 카페"
+  응답: {"fields": {"name": "뷰스트", "region": "제주 서귀포", "category": "카페", "address": "제주도 서귀포시 안덕면 사계남로 216번길 29"}, "missing_fields": []}
 
 ## 응답 형식 (매우 중요!)
 반드시 아래 JSON 형식으로만 응답하세요.
@@ -236,6 +258,12 @@ WISHLIST_PROMPT = """당신은 쇼핑·위시리스트 정보를 정밀하게 �
 ## 대화 속 상품 추천 처리
 - 메신저 대화에서 상품을 추천하는 내용이면, 상품 정보만 추출
 - 링크가 있으면 product_url에 기록
+
+## Few-Shot 예제 (모범 답안)
+- 입력: "장바구니 1. 무지 반팔티 ₩15,000  2. 린넨 팬츠 ₩39,900"
+  응답: {"fields": [{"product_name": "무지 반팔티", "price_amount": 15000, "category_tag": "의류"}, {"product_name": "린넨 팬츠", "price_amount": 39900, "category_tag": "의류"}], "missing_fields": []}
+- 입력: "나이키 덩크 로우 레트로 블랙 화이트 정가 139,000원 -> 할인가 119,000원"
+  응답: {"fields": {"product_name": "나이키 덩크 로우 레트로 블랙 화이트", "price_amount": 119000, "original_price": 139000, "category_tag": "신발", "color": "블랙, 화이트"}, "missing_fields": []}
 
 ## 응답 형식 (매우 중요!)
 반드시 아래 JSON 형식으로만 응답하세요.
