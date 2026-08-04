@@ -893,7 +893,7 @@ class HomeScreen extends ConsumerWidget {
         }
         // 4. MEMO 매핑
         else if (categoryIndex == 3) {
-          newTitle = firstFields['title'] ?? '새로운 메모';
+          newTitle = firstFields['title'] ?? firstFields['recipe_name'] ?? firstFields['book_title'] ?? firstFields['headline'] ?? firstFields['label'] ?? '새로운 메모';
         }
 
         // 캐시 업데이트: 다른 탭으로 이동해도 결과가 유지되도록 draft 전체에 저장
@@ -1083,7 +1083,7 @@ class HomeScreen extends ConsumerWidget {
           newTitle = itemFields['product_name'] ?? '새로운 위시 상품';
         }
         else if (categoryIndex == 3) {
-          newTitle = firstFields['title'] ?? '새로운 메모';
+          newTitle = firstFields['title'] ?? firstFields['recipe_name'] ?? firstFields['book_title'] ?? firstFields['headline'] ?? firstFields['label'] ?? '새로운 메모';
         }
 
         final cacheMap2 = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
@@ -3692,7 +3692,7 @@ class DynamicFeaturesCard extends ConsumerWidget {
       ref.read(titleControllerProvider).text = item['product_name'] ?? '';
       ref.read(contentControllerProvider).text = item['content'] ?? '';
     } else if (itemCategory == 3) { // MEMO
-      ref.read(titleControllerProvider).text = item['title'] ?? '';
+      ref.read(titleControllerProvider).text = item['title'] ?? item['recipe_name'] ?? item['book_title'] ?? item['headline'] ?? item['label'] ?? '';
       ref.read(contentControllerProvider).text = item['content'] ?? item['body'] ?? '';
     }
   }
