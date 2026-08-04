@@ -194,8 +194,9 @@ async def analyze_v2(request: AnalyzeRequest):
                 "type": t_type
             })
 
-    # 다중 항목(items) 처리 로직
-    if "items" in extracted_fields and isinstance(extracted_fields["items"], list) and len(extracted_fields["items"]) > 0:
+    # 다중 항목(items) 처리 로직 (체크리스트는 분할 제외)
+    is_checklist = extracted_fields.get("sub_type") == "CHECKLIST"
+    if not is_checklist and "items" in extracted_fields and isinstance(extracted_fields["items"], list) and len(extracted_fields["items"]) > 0:
         logger.info(f"[v2] 다중 항목 감지: {len(extracted_fields['items'])}건 분할 저장 시작")
         responses = []
         for item in extracted_fields["items"]:

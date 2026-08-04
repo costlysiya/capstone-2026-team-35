@@ -3201,6 +3201,10 @@ class DynamicFeaturesCard extends ConsumerWidget {
       'content', 'extraInfo',                 // 로컬 내부 저장용
     };
 
+    if (ref.watch(selectedCategoryProvider) == 3) {
+      excludeKeys.addAll({'tags', 'memo'});
+    }
+
     final entryList = activeFields.entries
         .where((entry) => !excludeKeys.contains(entry.key) && fieldLabels.containsKey(entry.key) && entry.value != null && entry.value.toString().trim().isNotEmpty)
         .toList();
@@ -3279,6 +3283,9 @@ class DynamicFeaturesCard extends ConsumerWidget {
               const SizedBox(height: 10),
             ],
 
+            if (ref.watch(selectedCategoryProvider) == 3)
+              _buildMemoDynamicUI(activeFields),
+              
             if (entryList.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8.0),
@@ -3387,6 +3394,267 @@ class DynamicFeaturesCard extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildMemoDynamicUI(Map<String, dynamic> fields) {
+    final subType = fields['sub_type']?.toString();
+    final body = fields['body']?.toString() ?? fields['memo']?.toString() ?? fields['description']?.toString() ?? fields['content']?.toString();
+    final tags = fields['tags'];
+
+    Widget dynamicComponent = const SizedBox.shrink();
+
+    switch (subType) {
+      case 'RECIPE':
+        final cookTime = fields['cook_time']?.toString() ?? '';
+        final servings = fields['servings']?.toString() ?? '';
+        final ingredients = fields['ingredients'];
+        final steps = fields['steps'];
+        dynamicComponent = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (cookTime.isNotEmpty || servings.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12.0),
+                child: Row(
+                  children: [
+                    if (cookTime.isNotEmpty) ...[
+                      const Icon(Icons.timer_outlined, size: 16, color: Colors.orange),
+                      const SizedBox(width: 4),
+                      Text(cookTime, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+                      const SizedBox(width: 12),
+                    ],
+                    if (servings.isNotEmpty) ...[
+                      const Icon(Icons.restaurant_outlined, size: 16, color: Colors.orange),
+                      const SizedBox(width: 4),
+                      Text(servings, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+                    ],
+                  ],
+                ),
+              ),
+            if (ingredients is List && ingredients.isNotEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(8)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('준비 재료', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: ingredients.map<Widget>((ing) {
+                        if (ing is Map) {
+                          return Text('• ${ing['name']} ${ing['amount'] ?? ''}');
+                        }
+                        return Text('• $ing');
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+            if (steps is List && steps.isNotEmpty)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: List.generate(steps.length, (index) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        CircleAvatar(
+                          radius: 10,
+                          backgroundColor: Colors.orange,
+                          child: Text('${index + 1}', style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(steps[index].toString(), style: const TextStyle(height: 1.4))),
+                      ],
+                    ),
+                  );
+                }),
+              ),
+          ],
+        );
+        break;
+      case 'NOVEL':
+        final title = fields['book_title']?.toString() ?? '';
+        final author = fields['author']?.toString() ?? '';
+        final platform = fields['platform']?.toString() ?? '';
+        final chapter = fields['chapter']?.toString() ?? '';
+        final genre = fields['genre']?.toString() ?? '';
+        final excerpt = fields['excerpt']?.toString() ?? '';
+        
+        dynamicComponent = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.purple.shade100),
+                borderRadius: BorderRadius.circular(8),
+                color: Colors.purple.shade50,
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.book, color: Colors.purple, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        if (author.isNotEmpty) Text(author, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 4,
+                          children: [
+                            if (platform.isNotEmpty) _buildBadge(platform, Colors.blue),
+                            if (genre.isNotEmpty) _buildBadge(genre, Colors.pink),
+                            if (chapter.isNotEmpty) _buildBadge(chapter, Colors.purple),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (excerpt.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.only(top: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  border: Border(left: BorderSide(color: Colors.purple.shade200, width: 4)),
+                  color: Colors.purple.withValues(alpha: 0.05),
+                ),
+                child: Text('"$excerpt"', style: const TextStyle(fontStyle: FontStyle.italic, height: 1.5, color: Colors.black87)),
+              ),
+          ],
+        );
+        break;
+      case 'CHECKLIST':
+        final items = fields['items'];
+        final total = fields['total_count'] ?? 0;
+        final checked = fields['checked_count'] ?? 0;
+        dynamicComponent = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.check_box, color: Colors.teal, size: 18),
+                const SizedBox(width: 6),
+                Text('진행률: $checked / $total', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (items is List)
+              ...items.map<Widget>((item) {
+                final text = item is Map ? item['text']?.toString() : item.toString();
+                final isChecked = item is Map ? (item['checked'] == true) : false;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6.0),
+                  child: Row(
+                    children: [
+                      Icon(isChecked ? Icons.check_box : Icons.check_box_outline_blank, color: isChecked ? Colors.teal : Colors.grey, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          text ?? '',
+                          style: TextStyle(
+                            decoration: isChecked ? TextDecoration.lineThrough : null,
+                            color: isChecked ? Colors.grey : Colors.black87,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+          ],
+        );
+        break;
+      case 'QR_CODE':
+        final val = fields['code_value']?.toString() ?? '';
+        final type = fields['code_type']?.toString() ?? '코드';
+        final label = fields['label']?.toString() ?? '';
+        dynamicComponent = Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(12)),
+          child: Column(
+            children: [
+              Icon(type == 'QR' ? Icons.qr_code_2 : Icons.barcode_reader, size: 40, color: Colors.black54),
+              const SizedBox(height: 8),
+              if (label.isNotEmpty) Text(label, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black54)),
+              const SizedBox(height: 4),
+              SelectableText(val, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+            ],
+          ),
+        );
+        break;
+      case 'ARTICLE':
+        final headline = fields['headline']?.toString() ?? '';
+        final publisher = fields['publisher']?.toString() ?? '';
+        final pubDate = fields['published_at']?.toString() ?? '';
+        dynamicComponent = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (headline.isNotEmpty) Text(headline, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, height: 1.3)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                if (publisher.isNotEmpty) ...[
+                  const Icon(Icons.newspaper, size: 14, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Text(publisher, style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 12),
+                ],
+                if (pubDate.isNotEmpty)
+                  Text(pubDate, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              ],
+            ),
+          ],
+        );
+        break;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (subType != null && subType != 'OTHER' && subType != 'NOTE') ...[
+          dynamicComponent,
+          const Divider(height: 32),
+        ],
+        if (body != null && body.isNotEmpty) ...[
+          const Text('본문', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black54)),
+          const SizedBox(height: 8),
+          Text(body, style: const TextStyle(fontSize: 14, height: 1.6, color: Colors.black87)),
+          const SizedBox(height: 16),
+        ],
+        if (tags is List && tags.isNotEmpty)
+          Wrap(
+            spacing: 6,
+            runSpacing: -8,
+            children: tags.map<Widget>((tag) => Chip(
+              label: Text('#$tag', style: const TextStyle(fontSize: 11, color: Colors.deepPurple)),
+              backgroundColor: Colors.deepPurple.withValues(alpha: 0.1),
+              side: BorderSide.none,
+              padding: EdgeInsets.zero,
+            )).toList(),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildBadge(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
+      child: Text(text, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.bold)),
     );
   }
 
