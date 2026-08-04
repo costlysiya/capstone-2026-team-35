@@ -330,7 +330,7 @@ MEMO_PROMPT = """당신은 다양한 텍스트 정보를 구조화하는 AI입�
 - "n화", "EP.", "Chapter", "제n장" 등으로 회차 추출
 
 ### CHECKLIST (체크리스트·할 일 목록)
-- items: 항목 리스트 (예: [{"text": "장보기", "checked": false}, ...])
+- checklist_items: 항목 리스트 (예: [{"text": "장보기", "checked": false}, ...])
 - total_count: 전체 항목 수
 - checked_count: 완료된 항목 수
 

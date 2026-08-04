@@ -10,12 +10,15 @@ REQUIRED_FIELDS = {
 VALID_TYPES = {"SCHEDULE", "PLACE", "WISHLIST", "MEMO"}
 
 
-def _get_validate_targets(fields: dict) -> list[dict]:
+def _get_validate_targets(fields: dict, result_type: str = "") -> list[dict]:
     """
     fields가 단일 항목이면 [fields]로,
     복수 항목(items 리스트)이면 그 리스트를 반환.
     → 검증 로직을 단일/복수 구분 없이 동일하게 적용하기 위함.
+    단, MEMO 타입은 체크리스트 items가 분할 대상이 아니므로 항상 단일 취급.
     """
+    if result_type == "MEMO":
+        return [fields]
     if "items" in fields and isinstance(fields["items"], list):
         return fields["items"]
     return [fields]
@@ -119,22 +122,37 @@ def _enrich_wishlist_fields(fields: dict) -> dict:
 
 
 def _enrich_memo_fields(fields: dict) -> dict:
-    """MEMO 타입 보강 — 제목 자동 생성 + 사진 삭제"""
+    """MEMO 타입 보강 — 제목 자동 생성 + 사진 삭제 + 체크리스트 키 정규화"""
     fields.setdefault("keep_photo", False)       # 메모는 사진 삭제
     
-    # 제목 최우선순위: 서브 타입별 고유 제목 필드
-    if not fields.get("title"):
-        if fields.get("book_title"):         # NOVEL
+    sub_type = fields.get("sub_type", "")
+    
+    # ── 1) 서브 타입별 고유 제목은 LLM이 title을 채웠어도 "무조건" 덮어쓰기 ──
+    if sub_type == "NOVEL" and fields.get("book_title"):
+        fields["title"] = fields["book_title"]
+    elif sub_type == "RECIPE" and fields.get("recipe_name"):
+        fields["title"] = fields["recipe_name"]
+    elif sub_type == "ARTICLE" and fields.get("headline"):
+        fields["title"] = fields["headline"]
+    elif sub_type == "QR_CODE" and fields.get("label"):
+        fields["title"] = fields["label"]
+    elif not fields.get("title"):
+        # sub_type 매칭이 안 되었고 title도 비어있을 때만 폴백
+        if fields.get("book_title"):
             fields["title"] = fields["book_title"]
-        elif fields.get("recipe_name"):      # RECIPE
+        elif fields.get("recipe_name"):
             fields["title"] = fields["recipe_name"]
-        elif fields.get("headline"):         # ARTICLE
+        elif fields.get("headline"):
             fields["title"] = fields["headline"]
-        elif fields.get("label"):            # QR_CODE
+        elif fields.get("label"):
             fields["title"] = fields["label"]
-        elif fields.get("body"):             # 기본 폴백
+        elif fields.get("body"):
             body = fields["body"]
             fields["title"] = body[:30] + ("..." if len(body) > 30 else "")
+    
+    # ── 2) CHECKLIST: items → checklist_items 키 변환 (다중 분할 items와 혼동 방지) ──
+    if sub_type == "CHECKLIST" and "items" in fields:
+        fields["checklist_items"] = fields.pop("items")
             
     return fields
 
@@ -156,7 +174,7 @@ def validate_result(result: dict) -> dict:
 
     # 3) 필수 필드 검증 — 단일/복수 항목 모두 처리
     fields = result.get("fields", {})
-    targets = _get_validate_targets(fields)
+    targets = _get_validate_targets(fields, result_type=result["type"])
 
     all_missing = []
     for idx, item in enumerate(targets):
