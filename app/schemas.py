@@ -98,3 +98,14 @@ class BatchStatusResponse(BaseModel):
     failed: int
     results: list[AnalyzeResponse] = []
     errors: list[dict] = []
+
+class TokenRequest(BaseModel):
+    device_token: str
+
+class NotificationResponse(BaseModel):
+    id: int
+    title: str
+    body: str
+    result_id: int | None
+    is_read: bool
+    created_at: str

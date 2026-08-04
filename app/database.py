@@ -29,6 +29,28 @@ def init_db():
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_image_hash ON screenshots(image_hash)
     """)
+    
+    # 기기 토큰 저장소
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS device_tokens (
+            token TEXT PRIMARY KEY,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # 알림함(Inbox) 내역
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_token TEXT,
+            title TEXT NOT NULL,
+            body TEXT NOT NULL,
+            result_id INTEGER,
+            is_read BOOLEAN DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
     conn.commit()
     conn.close()
 
@@ -43,6 +65,66 @@ def save_result(type: str, confidence: float, fields: str, image_hash: str = Non
     conn.commit()
     conn.close()
     return row_id
+
+# === 푸시 알림 관련 함수 ===
+
+def save_device_token(token: str):
+    """기기 토큰 저장 (Upsert)"""
+    conn = get_db()
+    # SQLite UPSERT 구문
+    conn.execute("""
+        INSERT INTO device_tokens (token) 
+        VALUES (?) 
+        ON CONFLICT(token) DO UPDATE SET created_at = CURRENT_TIMESTAMP
+    """, (token,))
+    conn.commit()
+    conn.close()
+
+def save_notification(device_token: str, title: str, body: str, result_id: int = None) -> int:
+    """새로운 알림 내역 저장"""
+    conn = get_db()
+    cursor = conn.execute("""
+        INSERT INTO notifications (device_token, title, body, result_id)
+        VALUES (?, ?, ?, ?)
+    """, (device_token, title, body, result_id))
+    row_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return row_id
+
+def get_notifications(device_token: str, limit: int = 50, offset: int = 0) -> list[dict]:
+    """특정 기기의 알림 내역 조회"""
+    conn = get_db()
+    cursor = conn.execute("""
+        SELECT id, title, body, result_id, is_read, created_at
+        FROM notifications
+        WHERE device_token = ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT ? OFFSET ?
+    """, (device_token, limit, offset))
+    rows = cursor.fetchall()
+    conn.close()
+    
+    results = []
+    for r in rows:
+        results.append({
+            "id": r["id"],
+            "title": r["title"],
+            "body": r["body"],
+            "result_id": r["result_id"],
+            "is_read": bool(r["is_read"]),
+            "created_at": r["created_at"]
+        })
+    return results
+
+def mark_notification_read(notification_id: int) -> bool:
+    """알림 읽음 처리"""
+    conn = get_db()
+    cursor = conn.execute("UPDATE notifications SET is_read = 1 WHERE id = ?", (notification_id,))
+    changes = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return changes > 0
 
 def get_result_by_hash(image_hash: str):
     """이미지 해시로 기존 분석 결과 조회 (캐시 히트 확인)"""
