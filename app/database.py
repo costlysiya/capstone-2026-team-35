@@ -127,7 +127,7 @@ def mark_notification_read(notification_id: int) -> bool:
     return changes > 0
 
 def get_result_by_hash(image_hash: str):
-    """이미지 해시로 기존 분석 결과 조회 (캐시 히트 확인)"""
+    """이미지 해시로 기존 분석 결과 조회 (캐시 히트 확인) - 하위 호환성 유지"""
     conn = get_db()
     row = conn.execute(
         "SELECT * FROM screenshots WHERE image_hash = ? ORDER BY created_at DESC LIMIT 1",
@@ -137,6 +137,16 @@ def get_result_by_hash(image_hash: str):
     if row:
         return dict(row)
     return None
+
+def get_results_by_hash(image_hash: str) -> list[dict]:
+    """이미지 해시로 등록된 모든 분석 결과를 조회 (다중 추출 분할 캐시 지원)"""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM screenshots WHERE image_hash = ? ORDER BY id ASC",
+        (image_hash,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 def get_result_by_id(id: int):
     """단건 조회"""

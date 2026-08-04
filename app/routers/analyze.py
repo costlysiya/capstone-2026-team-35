@@ -5,7 +5,7 @@ from app.schemas import (
 )
 from app.prompts import get_system_prompt, CLASSIFY_PROMPT, get_type_prompt
 from app.validator import validate_result
-from app.database import save_result, get_result_by_hash
+from app.database import save_result, get_result_by_hash, get_results_by_hash
 from app.llm_client import call_llm
 from app.concurrency import call_llm_with_limit
 import json
@@ -108,8 +108,8 @@ def analyze_screenshot(request: AnalyzeRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"분석 실패: {str(e)}")
     
-@router.post("/analyze/v2", response_model=AnalyzeResponse)
-def analyze_v2(request: AnalyzeRequest):
+@router.post("/analyze/v2", response_model=AnalyzeResponse | list[AnalyzeResponse])
+async def analyze_v2(request: AnalyzeRequest):
     """2단계 분석: 분류 → 타입별 상세 추출"""
     
     # 📥 요청 내용 로깅 — 앱에서 뭘 보냈는지 확인
@@ -117,23 +117,26 @@ def analyze_v2(request: AnalyzeRequest):
 
     # 🗃️ 캐시 확인: 동일 이미지가 이미 분석된 적 있으면 재사용
     if request.image_hash:
-        cached = get_result_by_hash(request.image_hash)
-        if cached:
-            logger.info(f"[v2] 🗃️ 캐시 히트! hash={request.image_hash[:16]}...")
-            cached_fields = cached["fields"]
-            if isinstance(cached_fields, str):
-                try:
-                    cached_fields = json.loads(cached_fields)
-                except json.JSONDecodeError:
-                    cached_fields = {}
-            return AnalyzeResponse(
-                id=cached["id"],
-                type=cached["type"],
-                confidence=cached["confidence"],
-                fields=cached_fields,
-                missing_fields=[],
-                status=cached["status"]
-            )
+        cached_list = get_results_by_hash(request.image_hash)
+        if cached_list:
+            logger.info(f"[v2] 🗃️ 캐시 히트! hash={request.image_hash[:16]}... (총 {len(cached_list)}건)")
+            responses = []
+            for cached in cached_list:
+                cached_fields = cached["fields"]
+                if isinstance(cached_fields, str):
+                    try:
+                        cached_fields = json.loads(cached_fields)
+                    except json.JSONDecodeError:
+                        cached_fields = {}
+                responses.append(AnalyzeResponse(
+                    id=cached["id"],
+                    type=cached["type"],
+                    confidence=cached["confidence"],
+                    fields=cached_fields,
+                    missing_fields=[],
+                    status=cached["status"]
+                ))
+            return responses if len(responses) > 1 else responses[0]
 
     # 🛡️ 입력 검증: 너무 짧은 텍스트
     clean_text = request.ocr_text.strip()
@@ -166,7 +169,7 @@ def analyze_v2(request: AnalyzeRequest):
         )
         detected_type = classify_result.get("type", "MEMO")
         classify_confidence = classify_result.get("confidence", 0)
-        logger.info(f"[v2] LLM 분류: {detected_type} (신뢰도: {classify_confidence})")
+        logger.info(f"[v2] LLM 분류: {detected_type} (신뢰도: {classify_confidence}) (전체응답: {classify_result})")
     
     # === 2단계: 타입별 상세 추출 ===
     extract_result = call_llm_with_limit(
@@ -181,7 +184,53 @@ def analyze_v2(request: AnalyzeRequest):
     # 🚨 GPT 응답 형식을 유연하게 파싱
     extracted_fields = _extract_fields(extract_result)
     
-    # 결과 합치기
+    # 마스킹 토큰 정보 구조화
+    masked_info_list = []
+    if request.masked_tokens:
+        for token in request.masked_tokens:
+            t_type = _detect_token_type(token)
+            masked_info_list.append({
+                "original": token,
+                "type": t_type
+            })
+
+    # 다중 항목(items) 처리 로직
+    if "items" in extracted_fields and isinstance(extracted_fields["items"], list) and len(extracted_fields["items"]) > 0:
+        logger.info(f"[v2] 다중 항목 감지: {len(extracted_fields['items'])}건 분할 저장 시작")
+        responses = []
+        for item in extracted_fields["items"]:
+            final = {
+                "type": detected_type,
+                "confidence": classify_confidence,
+                "fields": item,
+                "missing_fields": extract_result.get("missing_fields", [])
+            }
+            if "error" in extract_result:
+                final["status"] = "ERROR"
+            else:
+                final = validate_result(final)
+            
+            row_id = save_result(
+                type=final["type"],
+                confidence=final.get("confidence", 0),
+                fields=json.dumps(final.get("fields", {}), ensure_ascii=False),
+                image_hash=request.image_hash,
+                status=final.get("status", "DRAFT")
+            )
+            
+            resp = AnalyzeResponse(
+                id=row_id,
+                type=final["type"],
+                confidence=final.get("confidence", 0),
+                fields=final.get("fields", {}),
+                missing_fields=final.get("missing_fields", []),
+                status=final.get("status", "DRAFT"),
+                masked_info=masked_info_list
+            )
+            responses.append(resp)
+        return responses if len(responses) > 1 else responses[0]
+    
+    # 단일 항목 처리 로직
     final = {
         "type": detected_type,
         "confidence": classify_confidence,
@@ -189,7 +238,6 @@ def analyze_v2(request: AnalyzeRequest):
         "missing_fields": extract_result.get("missing_fields", [])
     }
     
-    # 🚨 완전 실패 시 에러 상태 강제 부여
     if "error" in extract_result:
         final["status"] = "ERROR"
     else:
@@ -202,16 +250,6 @@ def analyze_v2(request: AnalyzeRequest):
         image_hash=request.image_hash,
         status=final.get("status", "DRAFT")
     )
-    
-    # 마스킹 토큰 정보 구조화
-    masked_info_list = []
-    if request.masked_tokens:
-        for token in request.masked_tokens:
-            t_type = _detect_token_type(token)
-            masked_info_list.append({
-                "original": token,
-                "type": t_type
-            })
 
     return AnalyzeResponse(
         id=row_id,
