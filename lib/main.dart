@@ -2059,6 +2059,7 @@ class HomeScreen extends ConsumerWidget {
                                       final draft = drafts[imgPath];
                                       final isDone = draft?.status == 'success';
                                       final isLoading = draft?.status == 'loading';
+                                      final isAiDone = draft?.aiStatus == 'success';
 
                                       Color categoryBorderColor = SoseangTheme.border;
                                       String catIcon = '⚡';
@@ -2124,6 +2125,13 @@ class HomeScreen extends ConsumerWidget {
                                                   colorBlendMode: isDone && !isActive ? BlendMode.darken : null,
                                                 ),
                                               ),
+                                              if (isAiDone)
+                                                Container(
+                                                  color: Colors.lightGreen.withValues(alpha: 0.6),
+                                                  child: const Center(
+                                                    child: Icon(Icons.check, color: Colors.white, size: 36),
+                                                  ),
+                                                ),
                                               if (isLoading)
                                                 Container(
                                                   color: Colors.black38,
