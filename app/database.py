@@ -32,15 +32,15 @@ def init_db():
     conn.commit()
     conn.close()
 
-def save_result(type: str, confidence: float, fields: str, image_hash: str = None):
+def save_result(type: str, confidence: float, fields: str, image_hash: str = None, status: str = 'DRAFT'):
     """분석 결과 저장 (image_hash: 중복 분석 방지용 이미지 해시)"""
     conn = get_db()
     cursor = conn.execute(
-        "INSERT INTO screenshots (type, confidence, fields, image_hash) VALUES (?, ?, ?, ?)",
-        (type, confidence, fields, image_hash)
+        "INSERT INTO screenshots (type, confidence, fields, image_hash, status) VALUES (?, ?, ?, ?, ?)",
+        (type, confidence, fields, image_hash, status)
     )
-    conn.commit()
     row_id = cursor.lastrowid
+    conn.commit()
     conn.close()
     return row_id
 

@@ -188,13 +188,19 @@ def analyze_v2(request: AnalyzeRequest):
         "fields": extracted_fields,
         "missing_fields": extract_result.get("missing_fields", [])
     }
-    final = validate_result(final)
+    
+    # 🚨 완전 실패 시 에러 상태 강제 부여
+    if "error" in extract_result:
+        final["status"] = "ERROR"
+    else:
+        final = validate_result(final)
     
     row_id = save_result(
         type=final["type"],
         confidence=final.get("confidence", 0),
         fields=json.dumps(final.get("fields", {}), ensure_ascii=False),
-        image_hash=request.image_hash
+        image_hash=request.image_hash,
+        status=final.get("status", "DRAFT")
     )
     
     # 마스킹 토큰 정보 구조화
