@@ -18,6 +18,10 @@ import 'firebase_options.dart';
 import 'services/fcm_service.dart';
 import 'screens/notifications_screen.dart';
 import 'package:badges/badges.dart' as badges;
+import 'package:photo_manager/photo_manager.dart';
+import 'package:wechat_assets_picker/wechat_assets_picker.dart';
+import 'package:path_provider/path_provider.dart';
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 🎨 소생 앱 디자인 테마 (뮤트파스텔-아이보리-베이지)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -124,6 +128,7 @@ void main() async {
 
 class OcrDraft {
   final String imagePath;
+  final String? assetId; // 갤러리 원본 ID
   final String status; // 'idle', 'loading', 'success', 'error'
   final String extractedText;
   final String title;
@@ -139,6 +144,7 @@ class OcrDraft {
 
   OcrDraft({
     required this.imagePath,
+    this.assetId,
     required this.status,
     this.extractedText = '',
     this.title = '',
@@ -154,6 +160,7 @@ class OcrDraft {
 
   OcrDraft copyWith({
     String? status,
+    String? assetId,
     String? extractedText,
     String? title,
     String? content,
@@ -167,6 +174,7 @@ class OcrDraft {
   }) {
     return OcrDraft(
       imagePath: this.imagePath,
+      assetId: assetId ?? this.assetId,
       status: status ?? this.status,
       extractedText: extractedText ?? this.extractedText,
       title: title ?? this.title,
@@ -204,6 +212,9 @@ final selectedCategoryProvider = StateProvider<int>((ref) => 3);
 // 일정 카테고리 내부 세부 분류 (0: 일반 일정, 1: 기프티콘)
 final selectedSubCategoryProvider = StateProvider<int>((ref) => 0);
 
+// 갤러리 원본 일괄 삭제를 위한 대기열
+final pendingDeleteListProvider = StateProvider<List<String>>((ref) => []);
+
 // AI 다중 항목 페이징 상태
 final currentItemIndexProvider = StateProvider<int>((ref) => 0);
 
@@ -215,6 +226,7 @@ final titleControllerProvider = Provider((ref) => TextEditingController());
 final contentControllerProvider = Provider((ref) => TextEditingController());
 final scheduleDateProvider = Provider((ref) => TextEditingController());   
 final placeLocationProvider = Provider((ref) => TextEditingController()); 
+final globalSearchControllerProvider = Provider((ref) => TextEditingController());
 
 // 전역 데이터 보관함
 final savedCardsProvider = StateProvider<List<Map<String, dynamic>>>((ref) => []);
@@ -222,6 +234,7 @@ final savedCardsProvider = StateProvider<List<Map<String, dynamic>>>((ref) => []
 // 장소 탭 전용 상태
 final placeRegionProvider = StateProvider<Set<String>>((ref) => {});
 final placeSearchProvider = StateProvider<String>((ref) => '');
+final globalSearchProvider = StateProvider<String>((ref) => '');
 
 // 🗓️ 캘린더 관련 상태 (일정 보관함)
 final focusedDayProvider = StateProvider<DateTime>((ref) => DateTime.now());
@@ -289,7 +302,15 @@ class HomeScreen extends ConsumerWidget {
       return currentCache[image.path]!;
     }
 
-    currentCache[image.path] = OcrDraft(imagePath: image.path, status: 'loading');
+    // 기존 데이터(assetId 등)를 유지하면서 상태만 'loading'으로 변경
+    final existingDraft = currentCache[image.path];
+    final preservedAssetId = existingDraft?.assetId;
+    
+    if (existingDraft != null) {
+      currentCache[image.path] = existingDraft.copyWith(status: 'loading');
+    } else {
+      currentCache[image.path] = OcrDraft(imagePath: image.path, status: 'loading', assetId: preservedAssetId);
+    }
     ref.read(draftCacheProvider.notifier).state = currentCache;
 
     try {
@@ -336,6 +357,7 @@ class HomeScreen extends ConsumerWidget {
       if (rawText.isEmpty) {
         final draft = OcrDraft(
           imagePath: image.path,
+          assetId: preservedAssetId,
           status: 'success',
           extractedText: '⚠️ 글자가 없는 이미지입니다.',
           title: '새로운 소생 카드',
@@ -452,6 +474,7 @@ class HomeScreen extends ConsumerWidget {
 
       final draft = OcrDraft(
         imagePath: image.path,
+        assetId: preservedAssetId,
         status: 'success',
         extractedText: rawText,
         title: titleText,
@@ -469,6 +492,7 @@ class HomeScreen extends ConsumerWidget {
     } catch (e) {
       final draft = OcrDraft(
         imagePath: image.path,
+        assetId: preservedAssetId,
         status: 'error',
         extractedText: '❌ 분석 실패: $e',
         title: '새로운 소생 카드',
@@ -580,11 +604,16 @@ class HomeScreen extends ConsumerWidget {
   }
 
   // 갤러리에서 대량 가져오기 (대기열 최대 20장)
-  Future<void> _pickMultiImages(WidgetRef ref) async {
-    final ImagePicker picker = ImagePicker();
-    final List<XFile> newImages = await picker.pickMultiImage();
+  Future<void> _pickMultiImages(BuildContext context, WidgetRef ref) async {
+    final List<AssetEntity>? assets = await AssetPicker.pickAssets(
+      context,
+      pickerConfig: const AssetPickerConfig(
+        maxAssets: 20,
+        requestType: RequestType.image,
+      ),
+    );
     
-    if (newImages.isNotEmpty) {
+    if (assets != null && assets.isNotEmpty) {
       final currentList = ref.read(pickedImagesProvider);
       final int availableSlots = 20 - currentList.length;
       
@@ -593,20 +622,41 @@ class HomeScreen extends ConsumerWidget {
         return;
       }
 
-      final addedList = newImages.take(availableSlots).toList();
+      final addedAssets = assets.take(availableSlots).toList();
+      List<XFile> addedList = [];
+      final cache = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
+      
+      for (var asset in addedAssets) {
+        final file = await asset.file;
+        if (file != null) {
+          final xfile = XFile(file.path);
+          addedList.add(xfile);
+          // 갤러리 원본 삭제를 위해 assetId 저장
+          cache[xfile.path] = OcrDraft(
+            imagePath: xfile.path,
+            assetId: asset.id,
+            status: 'idle',
+          );
+        }
+      }
+      
+      ref.read(draftCacheProvider.notifier).state = cache;
+      
       final updatedList = [...currentList, ...addedList];
       
       ref.read(pickedImagesProvider.notifier).state = updatedList;
       
       // 만약 기존에 하나도 없었다면 첫번째로 활성화
-      if (currentList.isEmpty) {
+      if (currentList.isEmpty && addedList.isNotEmpty) {
         ref.read(activeImageIndexProvider.notifier).state = 0;
         ref.read(ocrStatusProvider.notifier).state = 'idle';
         _clearAllFields(ref);
       }
 
       // 새로 추가된 사진들에 대해서만 백그라운드 처리 시작
-      _startBackgroundBatchProcessing(ref, addedList);
+      if (addedList.isNotEmpty) {
+        _startBackgroundBatchProcessing(ref, addedList);
+      }
     }
   }
 
@@ -1199,7 +1249,23 @@ class HomeScreen extends ConsumerWidget {
     // 기프티콘(0_1)과 위시리스트(2)만 갤러리 원본 스크린샷 사진 주소 저장
     String? finalImagePath;
     if ((categoryId == 0 && subCategoryId == 1) || categoryId == 2) {
-      finalImagePath = images[activeIndex].path;
+      try {
+        final originalFile = File(images[activeIndex].path);
+        final appDocDir = await getApplicationDocumentsDirectory();
+        final fileName = originalFile.uri.pathSegments.last;
+        final savedFile = await originalFile.copy('${appDocDir.path}/$fileName');
+        finalImagePath = savedFile.path;
+      } catch (e) {
+        print('이미지 복사 실패: $e');
+        finalImagePath = images[activeIndex].path; // fallback
+      }
+    }
+    
+    // 삭제 대기열에 assetId 추가
+    final activePath = images[activeIndex].path;
+    final activeDraft = ref.read(draftCacheProvider)[activePath];
+    if (activeDraft?.assetId != null) {
+      ref.read(pendingDeleteListProvider.notifier).update((state) => [...state, activeDraft!.assetId!]);
     }
 
     // 1. 🚀 [새로 추가된 로컬 DB 영구 저장 로직]
@@ -1363,6 +1429,18 @@ class HomeScreen extends ConsumerWidget {
       ref.read(activeImageIndexProvider.notifier).state = 0;
       ref.read(ocrStatusProvider.notifier).state = 'idle';
       _clearAllFields(ref);
+      
+      // 대기실이 비워졌으므로 일괄 삭제 실행
+      final pendingDeletes = ref.read(pendingDeleteListProvider);
+      if (pendingDeletes.isNotEmpty) {
+        try {
+          final result = await PhotoManager.editor.deleteWithIds(pendingDeletes);
+          print('갤러리 원본 일괄 삭제 요청 결과: $result');
+        } catch (e) {
+          print('갤러리 삭제 중 오류: $e');
+        }
+        ref.read(pendingDeleteListProvider.notifier).state = []; // 큐 초기화
+      }
     }
   }
 
@@ -1823,7 +1901,18 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    FCMService().initialize(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      FCMService().initialize(context);
+    });
+    
+    // 탭 이동 시 검색어 초기화
+    ref.listen(currentMenuProvider, (previous, next) {
+      if (previous != next) {
+        ref.read(globalSearchProvider.notifier).state = '';
+        ref.read(globalSearchControllerProvider).clear();
+      }
+    });
+
     final List<XFile> pickedImages = ref.watch(pickedImagesProvider);
     final int activeIndex = ref.watch(activeImageIndexProvider);
     final String ocrStatus = ref.watch(ocrStatusProvider);
@@ -1897,11 +1986,24 @@ class HomeScreen extends ConsumerWidget {
               ),
               child: const Icon(Icons.notifications_none),
             ),
-            onPressed: () {
-              Navigator.push(
+            onPressed: () async {
+              final resultId = await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const NotificationsScreen()),
               );
+
+              if (resultId != null) {
+                final savedCards = ref.read(savedCardsProvider);
+                try {
+                  final card = savedCards.firstWhere((c) => c['id'].toString() == resultId.toString());
+                  final targetCatId = card['categoryId'] ?? 3;
+                  final targetSubCatId = card['subCategoryId'] ?? 0;
+                  final cardStyle = _getCategoryStyle(targetCatId, subCategory: targetSubCatId);
+                  _showCardDetail(context, ref, card, cardStyle);
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('해당 항목을 찾을 수 없습니다.')));
+                }
+              }
             },
           ),
           const SizedBox(width: 8),
@@ -1969,7 +2071,7 @@ class HomeScreen extends ConsumerWidget {
                                 SizedBox(
                                   width: double.infinity,
                                   child: ElevatedButton.icon(
-                                    onPressed: () => _pickMultiImages(ref),
+                                    onPressed: () => _pickMultiImages(context, ref),
                                     icon: const Icon(Icons.photo_library),
                                     label: const Text('갤러리에서 사진 무더기로 가져오기'),
                                     style: ElevatedButton.styleFrom(
@@ -2038,7 +2140,7 @@ class HomeScreen extends ConsumerWidget {
                                     itemBuilder: (context, index) {
                                       if (index == pickedImages.length) {
                                         return GestureDetector(
-                                          onTap: () => _pickMultiImages(ref),
+                                          onTap: () => _pickMultiImages(context, ref),
                                           child: Container(
                                             margin: const EdgeInsets.symmetric(horizontal: 4),
                                             width: 65,
@@ -2489,6 +2591,17 @@ class HomeScreen extends ConsumerWidget {
                                   final focusedDay = ref.watch(focusedDayProvider);
 
                                   final filteredCards = savedCards.where((c) {
+                                    // 장소 보관함 제외, 전체 제목/내용 기반 검색
+                                    if (currentMenu != 'cat_1') {
+                                      final gSearchStr = ref.watch(globalSearchProvider).trim().toLowerCase();
+                                      if (gSearchStr.isNotEmpty) {
+                                        final title = (c['title'] ?? '').toString().toLowerCase();
+                                        final content = (c['content'] ?? '').toString().toLowerCase();
+                                        final extra = (c['extraInfo'] ?? '').toString().toLowerCase();
+                                        if (!title.contains(gSearchStr) && !content.contains(gSearchStr) && !extra.contains(gSearchStr)) return false;
+                                      }
+                                    }
+
                                     // 캘린더 날짜 필터링 (선택된 날짜가 있을 때: 일반일정/기프티콘 통합)
                                     if (currentMenu.startsWith('cat_0') && selectedDay != null) {
                                       if (c['categoryId'] != targetCatId) return false;
@@ -2558,7 +2671,25 @@ class HomeScreen extends ConsumerWidget {
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.stretch,
                                       children: [
-                                        if (currentMenu.startsWith('cat_0')) ...[
+                                        if (currentMenu != 'cat_1') ...[
+                                          // 장소 제외 전용 글로벌 제목 검색 바
+                                          TextField(
+                                            controller: ref.watch(globalSearchControllerProvider),
+                                            onChanged: (val) => ref.read(globalSearchProvider.notifier).state = val,
+                                            decoration: InputDecoration(
+                                              hintText: '제목 또는 내용으로 검색',
+                                              prefixIcon: Icon(Icons.search, color: themeColor),
+                                              filled: true,
+                                              fillColor: Colors.white,
+                                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: themeColor.withOpacity(0.5))),
+                                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: themeColor.withOpacity(0.5))),
+                                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: themeColor, width: 2)),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 12),
+                                        ],
+                                        if (currentMenu.startsWith('cat_0') && ref.watch(globalSearchProvider).trim().isEmpty) ...[
                                           // 🗓️ 캘린더 위젯
                                           Container(
                                             margin: const EdgeInsets.only(bottom: 16),
@@ -2828,6 +2959,17 @@ class HomeScreen extends ConsumerWidget {
                                   final selectedDay = ref.watch(selectedDayProvider);
 
                                   final filteredCards = savedCards.where((c) {
+                                    // 장소 보관함 제외, 전체 제목/내용 기반 검색
+                                    if (currentMenu != 'cat_1') {
+                                      final gSearchStr = ref.watch(globalSearchProvider).trim().toLowerCase();
+                                      if (gSearchStr.isNotEmpty) {
+                                        final title = (c['title'] ?? '').toString().toLowerCase();
+                                        final content = (c['content'] ?? '').toString().toLowerCase();
+                                        final extra = (c['extraInfo'] ?? '').toString().toLowerCase();
+                                        if (!title.contains(gSearchStr) && !content.contains(gSearchStr) && !extra.contains(gSearchStr)) return false;
+                                      }
+                                    }
+
                                     // 캘린더 날짜 필터링 (선택된 날짜가 있을 때: 일반일정/기프티콘 통합)
                                     if (currentMenu.startsWith('cat_0') && selectedDay != null) {
                                       if (c['categoryId'] != targetCatId) return false;
