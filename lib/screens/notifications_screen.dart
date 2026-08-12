@@ -76,10 +76,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   void _onNotificationTap(Map<String, dynamic> notif, int index) {
     _markAsRead(index);
     if (notif['result_id'] != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('결과 상세 페이지로 이동합니다 (ID: ${notif['result_id']})')),
-      );
-      // Navigator.push Named 등 실제 라우팅 연동
+      Navigator.pop(context, notif['result_id'].toString());
     }
   }
 

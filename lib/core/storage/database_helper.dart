@@ -48,6 +48,7 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE screenshots (
         id $idType,
+        asset_id $textType,
         type $textTypeNotNull,
         confidence $realType,
         fields $textType,
