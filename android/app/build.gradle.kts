@@ -20,8 +20,8 @@ android {
     defaultConfig {
         applicationId = "com.example.soseang_app"
         
-        // 1. ✨ 최소 SDK 버전을 21로 확실하게 고쳐줍니다!
-        minSdk = flutter.minSdkVersion 
+        // 1. ✨ 최소 SDK 버전을 26으로 올립니다 (ML Kit 요구사항)
+        minSdk = 26
         
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

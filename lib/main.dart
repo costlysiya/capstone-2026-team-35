@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:google_mlkit_entity_extraction/google_mlkit_entity_extraction.dart';
 import 'core/ml/on_device_text_classifier.dart';
 import 'core/storage/app_storage.dart';
 import 'core/storage/database_helper.dart';
@@ -136,6 +137,7 @@ class OcrDraft {
   final int category; // 0: 일정, 1: 장소, 2: 위시, 3: 메모
   final int subCategory; // 0: 일반일정, 1: 기프티콘
   final String scheduleDate;
+  final String scheduleEndDate;
   final String placeLocation;
   final Map<String, dynamic>? aiFields;
   final Map<String, dynamic>? originalSensitiveInfo;
@@ -152,6 +154,7 @@ class OcrDraft {
     this.category = 3,
     this.subCategory = 0,
     this.scheduleDate = '',
+    this.scheduleEndDate = '',
     this.placeLocation = '',
     this.aiFields,
     this.originalSensitiveInfo,
@@ -167,6 +170,7 @@ class OcrDraft {
     int? category,
     int? subCategory,
     String? scheduleDate,
+    String? scheduleEndDate,
     String? placeLocation,
     Map<String, dynamic>? aiFields,
     Map<String, dynamic>? originalSensitiveInfo,
@@ -182,6 +186,7 @@ class OcrDraft {
       category: category ?? this.category,
       subCategory: subCategory ?? this.subCategory,
       scheduleDate: scheduleDate ?? this.scheduleDate,
+      scheduleEndDate: scheduleEndDate ?? this.scheduleEndDate,
       placeLocation: placeLocation ?? this.placeLocation,
       aiFields: aiFields ?? this.aiFields,
       originalSensitiveInfo: originalSensitiveInfo ?? this.originalSensitiveInfo,
@@ -224,7 +229,8 @@ final currentMenuProvider = StateProvider<String>((ref) => 'home');
 // ✍️ 입력 컨트롤러들
 final titleControllerProvider = Provider((ref) => TextEditingController());
 final contentControllerProvider = Provider((ref) => TextEditingController());
-final scheduleDateProvider = Provider((ref) => TextEditingController());   
+final scheduleDateProvider = Provider((ref) => TextEditingController());
+final scheduleEndDateProvider = Provider((ref) => TextEditingController());   
 final placeLocationProvider = Provider((ref) => TextEditingController()); 
 final globalSearchControllerProvider = Provider((ref) => TextEditingController());
 
@@ -290,6 +296,7 @@ class HomeScreen extends ConsumerWidget {
     ref.read(titleControllerProvider).clear();
     ref.read(contentControllerProvider).clear();
     ref.read(scheduleDateProvider).clear();
+    ref.read(scheduleEndDateProvider).clear();
     ref.read(placeLocationProvider).clear();
     // (Removed aiResponseFieldsProvider state reset)
     ref.read(currentItemIndexProvider.notifier).state = 0;
@@ -363,6 +370,7 @@ class HomeScreen extends ConsumerWidget {
           title: '새로운 소생 카드',
           content: '',
           category: 3,
+          scheduleEndDate: '',
         );
         final cache = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
         cache[image.path] = draft;
@@ -413,41 +421,59 @@ class HomeScreen extends ConsumerWidget {
 
       int subCat = 0;
       String schedDate = '';
+      String schedEndDate = '';
       String pLocation = '';
 
-      if (finalCategory == 0) {
-        final isGifticon = ['기프티콘', '쿠폰', '바코드', '교환권', '모바일상품권', '모바일쿠폰', '선물하기', '교환처'].any((k) => lowerText.contains(k)) ||
-                           lowerText.contains('사용기한') || lowerText.contains('유효기간');
+      // 항상 추출을 시도하여 사용자가 카테고리를 나중에 변경하더라도 오토필이 되도록 지원합니다.
+      final isGifticon = ['기프티콘', '쿠폰', '바코드', '교환권', '모바일상품권', '모바일쿠폰', '선물하기', '교환처'].any((k) => lowerText.contains(k)) ||
+                         lowerText.contains('사용기한') || lowerText.contains('유효기간');
         if (isGifticon) {
           subCat = 1;
         }
-        
-        // 날짜 추출 (기프티콘 여부와 무관하게 일정 카테고리 전체 적용)
+
+        // 로컬 정규식 기반 날짜 추출 (ML Kit의 DateTimeEntity는 시간만 있어도 오늘 날짜로 변환하는 문제가 있어 제외)
         final fullTextCleaned = rawText.replaceAll('\n', ' ');
-        final dateBase = r'(\d{2,4}[.\-/년]\s?\d{1,2}[.\-/월]\s?\d{1,2}일?)';
+        final dateBase = r'((\d{2,4})[.\-/년]\s?(\d{1,2})[.\-/월]\s?(\d{1,2})일?)';
         
-        // 1. 유효기간, 기한, 마감, 까지 등이 명시된 deadline 최우선 추출
-        final deadlinePat = RegExp('(유효기간|유효 기간|기한|마감|기간|일시)[^0-9]*' + dateBase + '|' + dateBase + r'\s*까지');
-        final deadlineMatch = deadlinePat.firstMatch(fullTextCleaned);
-        
-        if (deadlineMatch != null) {
-          schedDate = deadlineMatch.group(2) ?? deadlineMatch.group(3) ?? deadlineMatch.group(0)!;
+        final dateReg = RegExp(dateBase);
+        final matches = dateReg.allMatches(fullTextCleaned).toList();
+
+        List<String> extractedDates = [];
+        for (final m in matches) {
+          String y = m.group(2)!;
+          String mo = m.group(3)!;
+          String d = m.group(4)!;
+          if (y.length == 2) y = '20$y';
+          mo = mo.padLeft(2, '0');
+          d = d.padLeft(2, '0');
+          extractedDates.add('$y-$mo-$d');
+        }
+
+        if (subCat == 1) { 
+          // 기프티콘: 유효기간 패턴이 있으면 우선 적용, 없으면 가장 마지막 날짜
+          final deadlinePat = RegExp('(유효기간|유효 기간|기한|마감|기간|일시)[^0-9]*' + dateBase + '|' + dateBase + r'\s*까지');
+          final deadlineMatch = deadlinePat.firstMatch(fullTextCleaned);
+          if (deadlineMatch != null) {
+            final m = dateReg.firstMatch(deadlineMatch.group(0)!);
+            if (m != null) {
+              String y = m.group(2)!; String mo = m.group(3)!; String d = m.group(4)!;
+              if (y.length == 2) y = '20$y';
+              schedDate = '$y-${mo.padLeft(2, '0')}-${d.padLeft(2, '0')}';
+            }
+          } else if (extractedDates.isNotEmpty) {
+            schedDate = extractedDates.last; // 기프티콘은 가장 늦은 날짜가 유효기간일 확률 높음
+          }
         } else {
-          // 2. 명시된 기한이 없으면 일반 날짜 아무거나 추출
-          final datePat1 = RegExp(r'\b(\d{2}|\d{4})[.\-/]\d{1,2}[.\-/]\d{1,2}\b');
-          final datePat2 = RegExp(r'(\d{2}|\d{4})년\s?\d{1,2}월\s?\d{1,2}일');
-          final m1 = datePat1.firstMatch(fullTextCleaned);
-          if (m1 != null) {
-            schedDate = m1.group(0)!;
-          } else {
-            final m2 = datePat2.firstMatch(fullTextCleaned);
-            if (m2 != null) {
-              schedDate = m2.group(0)!;
+          // 일반 일정
+          if (extractedDates.isNotEmpty) {
+            schedDate = extractedDates.first;
+            if (extractedDates.length > 1) {
+              schedEndDate = extractedDates[1];
             }
           }
         }
-      } else if (finalCategory == 1) { // PLACE
-        // 주소 오토필 로직
+
+        // 항상 주소도 추출합니다.
         final addressPat = RegExp(r'([가-힣]+(시|도)\s+[가-힣]+(시|군|구)\s+[가-힣]+(동|읍|면|로|길)\s*\d*(-\d+)?)');
         final m1 = addressPat.firstMatch(rawText);
         if (m1 != null) {
@@ -457,9 +483,8 @@ class HomeScreen extends ConsumerWidget {
           final m2 = fallbackPat.firstMatch(rawText);
           if (m2 != null) pLocation = m2.group(0)!;
         }
-      }
 
-      // SQLite DB에 1차 초안(DRAFT) 레코드 등록
+        // SQLite DB에 1차 초안(DRAFT) 레코드 등록
       try {
         await DatabaseHelper.instance.insertScreenshot({
           'type': aiResultType,
@@ -482,6 +507,7 @@ class HomeScreen extends ConsumerWidget {
         category: finalCategory,
         subCategory: subCat,
         scheduleDate: schedDate,
+        scheduleEndDate: schedEndDate,
         placeLocation: pLocation,
       );
 
@@ -498,6 +524,7 @@ class HomeScreen extends ConsumerWidget {
         title: '새로운 소생 카드',
         content: '',
         category: 3,
+        scheduleEndDate: '',
       );
       final cache = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
       cache[image.path] = draft;
@@ -524,6 +551,7 @@ class HomeScreen extends ConsumerWidget {
       ref.read(selectedCategoryProvider.notifier).state = draft.category;
       ref.read(selectedSubCategoryProvider.notifier).state = draft.subCategory;
       ref.read(scheduleDateProvider).text = draft.scheduleDate;
+      ref.read(scheduleEndDateProvider).text = draft.scheduleEndDate;
       ref.read(placeLocationProvider).text = draft.placeLocation;
       // (Removed aiResponseFieldsProvider assignment)
     }
@@ -600,6 +628,20 @@ class HomeScreen extends ConsumerWidget {
         subCategory: updatedSubCat,
       );
       ref.read(draftCacheProvider.notifier).state = cache;
+      
+      // Update UI controllers so that auto-filled fields appear when user manually changes category
+      if (category != null && category == 0) {
+        if (ref.read(scheduleDateProvider).text.isEmpty) {
+          ref.read(scheduleDateProvider).text = existingDraft.scheduleDate;
+        }
+        if (ref.read(scheduleEndDateProvider).text.isEmpty) {
+          ref.read(scheduleEndDateProvider).text = existingDraft.scheduleEndDate;
+        }
+      } else if (category != null && category == 1) {
+        if (ref.read(placeLocationProvider).text.isEmpty) {
+          ref.read(placeLocationProvider).text = existingDraft.placeLocation;
+        }
+      }
     }
   }
 
@@ -861,10 +903,13 @@ class HomeScreen extends ConsumerWidget {
       };
       final localType = indexToType[localCategoryIndex] ?? 'MEMO';
 
+      final now = DateTime.now();
+      final dateContextStr = '[현재 날짜: ${now.year}년 ${now.month}월 ${now.day}일]\n';
+      
       final response = await dio.post(
         serverUrl,
         data: {
-          'ocr_text': maskedText,
+          'ocr_text': '$dateContextStr$maskedText',
           'type': localType, // 로컬 AI 분류 결과를 필수 전송
           'masked_tokens': <String>[],
         },
@@ -901,6 +946,7 @@ class HomeScreen extends ConsumerWidget {
         int subCategoryIndex = 0;
         String newTitle = '새로운 메모';
         String newSchedule = '';
+        String newScheduleEnd = '';
         String newPlace = '';
         String newContent = '';
 
@@ -920,9 +966,50 @@ class HomeScreen extends ConsumerWidget {
           
           newTitle = firstFields['title'] ?? '새로운 일정';
           newContent = firstFields['content'] ?? firstFields['memo'] ?? firstFields['description'] ?? '';
+          
           final expiryDate = firstFields['expires_at'] as String?;
           final startDate = firstFields['start_at'] as String?;
           newSchedule = expiryDate ?? startDate ?? '';
+
+          final endAt = firstFields['end_at'] as String?;
+          final endTime = firstFields['end_time'] as String?;
+          final startTime = firstFields['start_time'] as String?;
+
+          // 종료일(Date) 추출
+          if (endAt != null && (endAt.contains('-') || endAt.contains('/'))) {
+            newScheduleEnd = endAt;
+          } else if (endTime != null && (endTime.contains('-') || endTime.contains('/'))) {
+            newScheduleEnd = endTime;
+          }
+
+          // 서버에서 일정을 여러 개(배열)로 분리 반환했을 경우, 두 번째 요소의 start_at을 종료일로 취급
+          if (newScheduleEnd.isEmpty && dataList.length > 1) {
+            final secondFields = dataList[1]['fields'] as Map<String, dynamic>?;
+            if (secondFields != null) {
+              final secondStart = secondFields['start_at'] as String?;
+              if (secondStart != null && (secondStart.contains('-') || secondStart.contains('/'))) {
+                newScheduleEnd = secondStart;
+              }
+            }
+          }
+
+          // 시간(Time)은 부가 정보(Content)로 편입
+          List<String> timeParts = [];
+          if (startTime != null && startTime.contains(':')) {
+            timeParts.add('⏰ 시작 시간: $startTime');
+          }
+          if (endTime != null && endTime.contains(':') && !(endTime.contains('-') || endTime.contains('/'))) {
+            timeParts.add('⏰ 종료 시간: $endTime');
+          }
+
+          if (timeParts.isNotEmpty) {
+            final timeStr = timeParts.join(' / ');
+            if (newContent.isEmpty) {
+              newContent = timeStr;
+            } else {
+              newContent = '$newContent\n$timeStr';
+            }
+          }
         }
         // 2. PLACE 매핑
         else if (categoryIndex == 1) {
@@ -949,6 +1036,15 @@ class HomeScreen extends ConsumerWidget {
         // 캐시 업데이트: 다른 탭으로 이동해도 결과가 유지되도록 draft 전체에 저장
         final cacheMap2 = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
         if (cacheMap2.containsKey(image.path)) {
+          String updatedContent = cacheMap2[image.path]!.content;
+          if (newContent.isNotEmpty) {
+            if (updatedContent.isEmpty) {
+              updatedContent = newContent;
+            } else {
+              updatedContent = '$updatedContent\n$newContent';
+            }
+          }
+
           cacheMap2[image.path] = cacheMap2[image.path]!.copyWith(
             aiStatus: 'success',
             aiFields: aiFieldsToSave,
@@ -956,7 +1052,9 @@ class HomeScreen extends ConsumerWidget {
             subCategory: subCategoryIndex,
             title: newTitle,
             scheduleDate: newSchedule,
+            scheduleEndDate: newScheduleEnd,
             placeLocation: newPlace,
+            content: updatedContent,
           );
           ref.read(draftCacheProvider.notifier).state = cacheMap2;
         }
@@ -970,9 +1068,10 @@ class HomeScreen extends ConsumerWidget {
           ref.read(selectedSubCategoryProvider.notifier).state = subCategoryIndex;
           ref.read(titleControllerProvider).text = newTitle;
           ref.read(scheduleDateProvider).text = newSchedule;
+          ref.read(scheduleEndDateProvider).text = newScheduleEnd;
           ref.read(placeLocationProvider).text = newPlace;
-          if (newContent.isNotEmpty) {
-            ref.read(contentControllerProvider).text = newContent;
+          if (cacheMap2.containsKey(image.path)) {
+            ref.read(contentControllerProvider).text = cacheMap2[image.path]!.content;
           }
         }
 
@@ -1076,10 +1175,13 @@ class HomeScreen extends ConsumerWidget {
       };
       final localType = indexToType[draft.category] ?? 'MEMO';
 
+      final now = DateTime.now();
+      final dateContextStr = '[현재 날짜: ${now.year}년 ${now.month}월 ${now.day}일]\n';
+
       final response = await dio.post(
         serverUrl,
         data: {
-          'ocr_text': maskedText,
+          'ocr_text': '$dateContextStr$maskedText',
           'type': localType,
           'masked_tokens': <String>[],
         },
@@ -1111,7 +1213,9 @@ class HomeScreen extends ConsumerWidget {
         int subCategoryIndex = 0;
         String newTitle = '새로운 메모';
         String newSchedule = '';
+        String newScheduleEnd = '';
         String newPlace = '';
+        String timeInfoToAppend = '';
 
         if (categoryIndex == 0) {
           final subType = firstFields['sub_type'] as String?;
@@ -1119,7 +1223,39 @@ class HomeScreen extends ConsumerWidget {
                              maskedText.contains('기프티콘') || maskedText.contains('쿠폰');
           subCategoryIndex = isGifticon ? 1 : 0;
           newTitle = firstFields['title'] ?? '새로운 일정';
-          newSchedule = (firstFields['expires_at'] as String?) ?? (firstFields['start_at'] as String?) ?? '';
+          
+          final expiryDate = firstFields['expires_at'] as String?;
+          final startDate = firstFields['start_at'] as String?;
+          newSchedule = expiryDate ?? startDate ?? '';
+
+          final endAt = firstFields['end_at'] as String?;
+          final endTime = firstFields['end_time'] as String?;
+          final startTime = firstFields['start_time'] as String?;
+
+          if (endAt != null && (endAt.contains('-') || endAt.contains('/'))) {
+            newScheduleEnd = endAt;
+          } else if (endTime != null && (endTime.contains('-') || endTime.contains('/'))) {
+            newScheduleEnd = endTime;
+          }
+
+          // 서버에서 일정을 여러 개(배열)로 분리 반환했을 경우, 두 번째 요소의 start_at을 종료일로 취급
+          if (newScheduleEnd.isEmpty && dataList.length > 1) {
+            final secondFields = dataList[1]['fields'] as Map<String, dynamic>?;
+            if (secondFields != null) {
+              final secondStart = secondFields['start_at'] as String?;
+              if (secondStart != null && (secondStart.contains('-') || secondStart.contains('/'))) {
+                newScheduleEnd = secondStart;
+              }
+            }
+          }
+
+          List<String> timeParts = [];
+          if (startTime != null && startTime.contains(':')) timeParts.add('⏰ 시작 시간: $startTime');
+          if (endTime != null && endTime.contains(':') && !(endTime.contains('-') || endTime.contains('/'))) timeParts.add('⏰ 종료 시간: $endTime');
+          
+          if (timeParts.isNotEmpty) {
+            timeInfoToAppend = timeParts.join(' / ');
+          }
         }
         else if (categoryIndex == 1) {
           Map<String, dynamic> placeFields = firstFields;
@@ -1138,6 +1274,15 @@ class HomeScreen extends ConsumerWidget {
 
         final cacheMap2 = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
         if (cacheMap2.containsKey(imagePath)) {
+          String updatedContent = cacheMap2[imagePath]!.content;
+          if (timeInfoToAppend.isNotEmpty) {
+            if (updatedContent.isEmpty) {
+              updatedContent = timeInfoToAppend;
+            } else {
+              updatedContent = '$updatedContent\n$timeInfoToAppend';
+            }
+          }
+
           cacheMap2[imagePath] = cacheMap2[imagePath]!.copyWith(
             aiStatus: 'success',
             aiFields: aiFieldsToSave,
@@ -1145,7 +1290,9 @@ class HomeScreen extends ConsumerWidget {
             subCategory: subCategoryIndex,
             title: newTitle,
             scheduleDate: newSchedule,
+            scheduleEndDate: newScheduleEnd,
             placeLocation: newPlace,
+            content: updatedContent,
           );
           ref.read(draftCacheProvider.notifier).state = cacheMap2;
         }
@@ -1158,7 +1305,11 @@ class HomeScreen extends ConsumerWidget {
           ref.read(selectedSubCategoryProvider.notifier).state = subCategoryIndex;
           ref.read(titleControllerProvider).text = newTitle;
           ref.read(scheduleDateProvider).text = newSchedule;
+          ref.read(scheduleEndDateProvider).text = newScheduleEnd;
           ref.read(placeLocationProvider).text = newPlace;
+          if (cacheMap2.containsKey(imagePath)) {
+             ref.read(contentControllerProvider).text = cacheMap2[imagePath]!.content;
+          }
         }
       } else {
         throw Exception('서버 응답 비정상');
@@ -1951,6 +2102,7 @@ class HomeScreen extends ConsumerWidget {
     final titleController = ref.watch(titleControllerProvider);
     final contentController = ref.watch(contentControllerProvider);
     final scheduleDateController = ref.watch(scheduleDateProvider);
+    final scheduleEndDateController = ref.watch(scheduleEndDateProvider);
     final placeLocationController = ref.watch(placeLocationProvider);
 
     final style = _getCategoryStyle(selectedCategory, subCategory: selectedCategory == 0 ? selectedSubCategory : 0);
@@ -2448,42 +2600,124 @@ class HomeScreen extends ConsumerWidget {
                                           const SizedBox(height: 15),
                                           
                                           if (selectedCategory == 0) ...[
-                                            Builder(
-                                              builder: (context) {
-                                                final isHighlighted = (ocrStatus == 'success' && scheduleDateController.text.trim().isEmpty) || missingFields.contains('start_at') || missingFields.contains('expires_at');
-                                                return TextField(
-                                                  controller: scheduleDateController,
-                                                  readOnly: true,
-                                                  onTap: () async {
-                                                    DateTime? pickedDate = await showDatePicker(
-                                                      context: context,
-                                                      initialDate: DateTime.now(),
-                                                      firstDate: DateTime(2000),
-                                                      lastDate: DateTime(2101),
-                                                    );
-                                                    if (pickedDate != null) {
-                                                      String formattedDate = "${pickedDate.year}/${pickedDate.month.toString().padLeft(2, '0')}/${pickedDate.day.toString().padLeft(2, '0')}";
-                                                      scheduleDateController.text = formattedDate;
-                                                      (context as Element).markNeedsBuild();
-                                                    }
-                                                  },
-                                                  decoration: InputDecoration(
-                                                    labelText: selectedSubCategory == 1 ? '⏰ 기프티콘 유효기간 선택' : '⏰ 일정 날짜 선택', 
-                                                    border: OutlineInputBorder(
-                                                      borderRadius: BorderRadius.circular(10),
-                                                      borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(),
+                                            if (selectedSubCategory == 0) ...[
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Builder(
+                                                      builder: (context) {
+                                                        final isHighlighted = (ocrStatus == 'success' && scheduleDateController.text.trim().isEmpty) || missingFields.contains('start_at');
+                                                        return TextField(
+                                                          controller: scheduleDateController,
+                                                          readOnly: true,
+                                                          onTap: () async {
+                                                            DateTime? pickedDate = await showDatePicker(
+                                                              context: context,
+                                                              initialDate: DateTime.now(),
+                                                              firstDate: DateTime(2000),
+                                                              lastDate: DateTime(2101),
+                                                            );
+                                                            if (pickedDate != null) {
+                                                              String formattedDate = "${pickedDate.year}/${pickedDate.month.toString().padLeft(2, '0')}/${pickedDate.day.toString().padLeft(2, '0')}";
+                                                              scheduleDateController.text = formattedDate;
+                                                              (context as Element).markNeedsBuild();
+                                                            }
+                                                          },
+                                                          decoration: InputDecoration(
+                                                            labelText: '⏰ 시작일 선택',
+                                                            border: OutlineInputBorder(
+                                                              borderRadius: BorderRadius.circular(10),
+                                                              borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(),
+                                                            ),
+                                                            enabledBorder: OutlineInputBorder(
+                                                              borderRadius: BorderRadius.circular(10),
+                                                              borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(color: Colors.black38),
+                                                            ),
+                                                            prefixIcon: Icon(Icons.calendar_today, color: isHighlighted ? Colors.redAccent : SoseangTheme.scheduleDark),
+                                                            fillColor: isHighlighted ? Colors.red.shade50 : SoseangTheme.ivory,
+                                                            filled: true,
+                                                          ),
+                                                        );
+                                                      },
                                                     ),
-                                                    enabledBorder: OutlineInputBorder(
-                                                      borderRadius: BorderRadius.circular(10),
-                                                      borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(color: Colors.black38),
-                                                    ),
-                                                    prefixIcon: Icon(Icons.calendar_today, color: isHighlighted ? Colors.redAccent : SoseangTheme.scheduleDark),
-                                                    fillColor: isHighlighted ? Colors.red.shade50 : SoseangTheme.ivory,
-                                                    filled: true,
                                                   ),
-                                                );
-                                              },
-                                            ),
+                                                  const SizedBox(width: 10),
+                                                  Expanded(
+                                                    child: Builder(
+                                                      builder: (context) {
+                                                        return TextField(
+                                                          controller: scheduleEndDateController,
+                                                          readOnly: true,
+                                                          onTap: () async {
+                                                            DateTime? pickedDate = await showDatePicker(
+                                                              context: context,
+                                                              initialDate: DateTime.now(),
+                                                              firstDate: DateTime(2000),
+                                                              lastDate: DateTime(2101),
+                                                            );
+                                                            if (pickedDate != null) {
+                                                              String formattedDate = "${pickedDate.year}/${pickedDate.month.toString().padLeft(2, '0')}/${pickedDate.day.toString().padLeft(2, '0')}";
+                                                              scheduleEndDateController.text = formattedDate;
+                                                              (context as Element).markNeedsBuild();
+                                                            }
+                                                          },
+                                                          decoration: InputDecoration(
+                                                            labelText: '⏰ 종료일 선택',
+                                                            border: OutlineInputBorder(
+                                                              borderRadius: BorderRadius.circular(10),
+                                                            ),
+                                                            enabledBorder: OutlineInputBorder(
+                                                              borderRadius: BorderRadius.circular(10),
+                                                              borderSide: const BorderSide(color: Colors.black38),
+                                                            ),
+                                                            prefixIcon: Icon(Icons.calendar_today, color: SoseangTheme.scheduleDark),
+                                                            fillColor: SoseangTheme.ivory,
+                                                            filled: true,
+                                                          ),
+                                                        );
+                                                      },
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ] else ...[
+                                              Builder(
+                                                builder: (context) {
+                                                  final isHighlighted = (ocrStatus == 'success' && scheduleDateController.text.trim().isEmpty) || missingFields.contains('start_at') || missingFields.contains('expires_at');
+                                                  return TextField(
+                                                    controller: scheduleDateController,
+                                                    readOnly: true,
+                                                    onTap: () async {
+                                                      DateTime? pickedDate = await showDatePicker(
+                                                        context: context,
+                                                        initialDate: DateTime.now(),
+                                                        firstDate: DateTime(2000),
+                                                        lastDate: DateTime(2101),
+                                                      );
+                                                      if (pickedDate != null) {
+                                                        String formattedDate = "${pickedDate.year}/${pickedDate.month.toString().padLeft(2, '0')}/${pickedDate.day.toString().padLeft(2, '0')}";
+                                                        scheduleDateController.text = formattedDate;
+                                                        (context as Element).markNeedsBuild();
+                                                      }
+                                                    },
+                                                    decoration: InputDecoration(
+                                                      labelText: '⏰ 기프티콘 유효기간 선택', 
+                                                      border: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(10),
+                                                        borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(),
+                                                      ),
+                                                      enabledBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(10),
+                                                        borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(color: Colors.black38),
+                                                      ),
+                                                      prefixIcon: Icon(Icons.calendar_today, color: isHighlighted ? Colors.redAccent : SoseangTheme.scheduleDark),
+                                                      fillColor: isHighlighted ? Colors.red.shade50 : SoseangTheme.ivory,
+                                                      filled: true,
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            ],
                                             const SizedBox(height: 15),
                                           ],
                                           if (selectedCategory == 1) ...[
@@ -3561,7 +3795,9 @@ class DynamicFeaturesCard extends ConsumerWidget {
       // ── SCHEDULE ──
       'sub_type': '세부 분류',
       'start_at': '시작일',
+      'start_time': '시작 시간',
       'expires_at': '만료일',
+      'end_time': '종료 시간',
       'location': '장소',
       'barcode_number': '바코드 번호',
       // ── PLACE ──
