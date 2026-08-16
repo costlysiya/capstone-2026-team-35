@@ -3650,47 +3650,7 @@ class MemoDynamicUIWidget extends StatelessWidget {
           ],
         );
         break;
-      case 'CHECKLIST':
-        final items = fields['checklist_items'] ?? fields['items'];
-        final total = fields['total_count'] ?? 0;
-        final checked = fields['checked_count'] ?? 0;
-        dynamicComponent = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.check_box, color: Colors.teal, size: 18),
-                const SizedBox(width: 6),
-                Text('진행률: $checked / $total', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (items is List)
-              ...items.map<Widget>((item) {
-                final text = item is Map ? item['text']?.toString() : item.toString();
-                final isChecked = item is Map ? (item['checked'] == true) : false;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 6.0),
-                  child: Row(
-                    children: [
-                      Icon(isChecked ? Icons.check_box : Icons.check_box_outline_blank, color: isChecked ? Colors.teal : Colors.grey, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          text ?? '',
-                          style: TextStyle(
-                            decoration: isChecked ? TextDecoration.lineThrough : null,
-                            color: isChecked ? Colors.grey : Colors.black87,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-          ],
-        );
-        break;
+
       case 'QR_CODE':
         final val = fields['code_value']?.toString() ?? '';
         final type = fields['code_type']?.toString() ?? '코드';
