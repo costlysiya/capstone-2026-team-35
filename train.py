@@ -6,6 +6,9 @@ from PIL import Image
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import TruncatedSVD
+from sklearn.metrics import classification_report, confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 import torch
 import torch.nn as nn
@@ -177,8 +180,8 @@ def main():
     train_dataset = MultimodalDataset(train_df, train_svd, DATASET_PATH, transform=train_transform)
     val_dataset = MultimodalDataset(val_df, val_svd, DATASET_PATH, transform=val_transform)
     
-    # 데이터셋 크기를 고려하여 배치 사이즈 8로 설정
-    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
+    # 데이터셋 크기를 고려하여 배치 사이즈 8로 설정 (BatchNorm 에러 방지를 위해 drop_last=True 추가)
+    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True, drop_last=True)
     val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False)
     
     # 5. 모델 정의, 손실함수, 옵티마이저 생성
@@ -240,7 +243,40 @@ def main():
         
         print(f"Epoch {epoch+1:02d}/{epochs:02d} | Train Loss: {epoch_loss:.4f} Acc: {train_acc:.4f} | Val Loss: {val_loss:.4f} Acc: {val_acc:.4f}")
         
-    # 7. 학습 완료 모델 저장
+    # 7. 최종 모델 성능 상세 평가 (Confusion Matrix & Classification Report)
+    print("\n📊 최종 모델 세부 성능 평가를 진행합니다...")
+    model.eval()
+    all_labels = []
+    all_preds = []
+    
+    with torch.no_grad():
+        for images, texts, labels in val_loader:
+            images = images.to(device)
+            texts = texts.to(device)
+            
+            outputs = model(images, texts)
+            _, predicted = torch.max(outputs.data, 1)
+            
+            all_labels.extend(labels.cpu().numpy())
+            all_preds.extend(predicted.cpu().numpy())
+            
+    target_names = ['SCHEDULE', 'PLACE', 'WISHLIST', 'MEMO']
+    
+    print("\n[Classification Report]")
+    print(classification_report(all_labels, all_preds, target_names=target_names))
+    
+    cm = confusion_matrix(all_labels, all_preds)
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=target_names, yticklabels=target_names)
+    plt.ylabel('Actual')
+    plt.xlabel('Predicted')
+    plt.title('Confusion Matrix')
+    
+    cm_save_path = "./confusion_matrix.png"
+    plt.savefig(cm_save_path)
+    print(f"📉 Confusion Matrix 이미지가 저장되었습니다 -> {cm_save_path}")
+
+    # 8. 학습 완료 모델 저장
     torch.save(model.state_dict(), MODEL_SAVE_PATH)
     print(f"\n🎉 모델 학습 완료 및 저장 완료 -> {MODEL_SAVE_PATH}")
 
