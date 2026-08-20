@@ -35,8 +35,8 @@ def check_and_create_notifications():
     today_str = now.strftime("%Y-%m-%d")
     tomorrow_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
     
-    # 2. 분석 완료(CONFIRMED)된 일정 가져오기
-    rows = conn.execute("SELECT id, fields FROM screenshots WHERE type = 'SCHEDULE' AND status = 'CONFIRMED'").fetchall()
+    # 2. 분석 완료(CONFIRMED)된 일정 및 기프티콘 가져오기
+    rows = conn.execute("SELECT id, type, fields FROM screenshots WHERE type IN ('SCHEDULE', 'GIFTICON') AND status = 'CONFIRMED'").fetchall()
     
     for row in rows:
         result_id = row["id"]
@@ -72,11 +72,11 @@ def check_and_create_notifications():
                 formatted_date = target_date
                 
             if target_date == today_str:
-                noti_title = f"🔔 {formatted_date} 오늘 일정 알림"
-                body = f"[{title}] 일정이 오늘({formatted_date}) 예정되어 있습니다."
+                noti_title = f"🔔 {formatted_date} 오늘 일정/만료 알림"
+                body = f"[{title}] 항목이 오늘({formatted_date}) 예정/만료입니다."
             elif target_date == tomorrow_str:
-                noti_title = f"🔔 {formatted_date} 내일 일정 알림"
-                body = f"[{title}] 일정이 내일({formatted_date}) 예정되어 있습니다."
+                noti_title = f"🔔 {formatted_date} 내일 일정/만료 알림"
+                body = f"[{title}] 항목이 내일({formatted_date}) 예정/만료입니다."
             else:
                 continue # 오늘이나 내일이 아니면 건너뜀
                 
