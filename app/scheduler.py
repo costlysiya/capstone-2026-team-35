@@ -35,8 +35,8 @@ def check_and_create_notifications():
     today_str = now.strftime("%Y-%m-%d")
     tomorrow_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
     
-    # 2. 분석 완료(CONFIRMED)된 일정 및 기프티콘 가져오기
-    rows = conn.execute("SELECT id, type, fields FROM screenshots WHERE type IN ('SCHEDULE', 'GIFTICON') AND status = 'CONFIRMED'").fetchall()
+    # 2. 저장된 일정 및 기프티콘 가져오기 (DRAFT, CONFIRMED 모두 포함)
+    rows = conn.execute("SELECT id, type, fields FROM screenshots WHERE type IN ('SCHEDULE', 'GIFTICON') AND status IN ('DRAFT', 'CONFIRMED')").fetchall()
     
     for row in rows:
         result_id = row["id"]
