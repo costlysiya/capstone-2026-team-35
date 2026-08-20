@@ -1,4 +1,7 @@
 
+import 'package:flutter/foundation.dart';
+import 'package:soseang_app/core/utils/ner_classifier.dart';
+
 class MaskingHelper {
   // Checks if a string contains any keywords (case-insensitive)
   static bool _containsKeywords(String text, List<String> keywords) {

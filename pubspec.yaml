@@ -86,6 +86,8 @@ flutter:
     - assets/vocab.json
     - assets/idf.json
     - assets/label_map.json
+    - assets/ner_model.tflite
+    - assets/vocab.txt
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

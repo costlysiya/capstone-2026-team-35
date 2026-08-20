@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../main.dart'; // SoseangTheme 가져오기 위해
 
-class NotificationsScreen extends StatefulWidget {
+class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
 
   @override
-  State<NotificationsScreen> createState() => _NotificationsScreenState();
+  ConsumerState<NotificationsScreen> createState() => _NotificationsScreenState();
 }
 
-class _NotificationsScreenState extends State<NotificationsScreen> {
+class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   List<dynamic> _notifications = [];
   bool _isLoading = true;
   String? _error;
@@ -22,39 +22,49 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> _fetchNotifications() async {
     try {
-      // 실제 API 호출 
-      // final dio = Dio();
-      // final response = await dio.get('http://10.0.2.2:8000/api/notifications');
-      // _notifications = response.data;
+      await Future.delayed(const Duration(milliseconds: 300));
+      final savedCards = ref.read(savedCardsProvider);
+      final readNotifs = ref.read(readNotificationsProvider);
       
-      // 더미 데이터 생성
-      await Future.delayed(const Duration(milliseconds: 600));
-      _notifications = [
-        {
-          "id": 1,
-          "title": "🎉 분석 완료",
-          "body": "스타벅스 기프티콘 분석이 완료되었습니다. 결과를 확인하세요!",
-          "result_id": 12,
-          "is_read": false,
-          "created_at": "방금 전"
-        },
-        {
-          "id": 2,
-          "title": "✅ 새로운 장소 등록",
-          "body": "을지다락 식당이 장소 보관함에 등록되었습니다.",
-          "result_id": 15,
-          "is_read": true,
-          "created_at": "1시간 전"
-        },
-        {
-          "id": 3,
-          "title": "🔔 일정 리마인더",
-          "body": "내일 오후 2시 회의 일정이 있습니다.",
-          "result_id": null,
-          "is_read": true,
-          "created_at": "하루 전"
+      List<dynamic> generatedNotifs = [];
+      final now = DateTime.now();
+      final todayStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+      final todayMonth = now.month;
+      final todayDay = now.day;
+      
+      final tomorrow = now.add(const Duration(days: 1));
+      final tomorrowStr = "${tomorrow.year}-${tomorrow.month.toString().padLeft(2, '0')}-${tomorrow.day.toString().padLeft(2, '0')}";
+      final tomorrowMonth = tomorrow.month;
+      final tomorrowDay = tomorrow.day;
+
+      for (var card in savedCards) {
+        if (card['categoryId'] == 0) { // SCHEDULE
+          final extraInfo = card['extraInfo']?.toString() ?? '';
+          final normalizedExtraInfo = extraInfo.replaceAll('/', '-');
+          
+          if (normalizedExtraInfo.startsWith(todayStr)) {
+            generatedNotifs.add({
+              "id": card['id'],
+              "title": "🔔 ${todayMonth}월 ${todayDay}일 일정 알림",
+              "body": "[${card['title']}] 일정이 오늘(${todayMonth}월 ${todayDay}일) 예정되어 있습니다.",
+              "result_id": card['id'],
+              "is_read": readNotifs.contains(card['id'].toString()),
+              "created_at": "오늘"
+            });
+          } else if (normalizedExtraInfo.startsWith(tomorrowStr)) {
+            generatedNotifs.add({
+              "id": card['id'],
+              "title": "🔔 ${tomorrowMonth}월 ${tomorrowDay}일 일정 알림",
+              "body": "[${card['title']}] 일정이 내일(${tomorrowMonth}월 ${tomorrowDay}일) 예정되어 있습니다.",
+              "result_id": card['id'],
+              "is_read": readNotifs.contains(card['id'].toString()),
+              "created_at": "내일"
+            });
+          }
         }
-      ];
+      }
+
+      _notifications = generatedNotifs;
       
       setState(() {
         _isLoading = false;
@@ -68,6 +78,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   void _markAsRead(int index) {
+    final notifId = _notifications[index]['id'].toString();
+    ref.read(readNotificationsProvider.notifier).update((state) {
+      return {...state, notifId};
+    });
     setState(() {
       _notifications[index]['is_read'] = true;
     });

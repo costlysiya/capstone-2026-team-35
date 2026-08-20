@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 // 백그라운드 메시지 핸들러 (반드시 최상위 함수여야 함)
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  log("Handling a background message: ${message.messageId}");
+  debugPrint("Handling a background message: ${message.messageId}");
   // 백그라운드에서는 시스템 트레이에 알림이 표시됨
 }
 
@@ -17,6 +17,7 @@ class FCMService {
   FCMService._internal();
 
   final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
+  final FlutterLocalNotificationsPlugin _flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   bool _isInitialized = false;
 
   void initialize(BuildContext context) async {
@@ -36,12 +37,37 @@ class FCMService {
       sound: true,
     );
 
-    log('User granted permission: ${settings.authorizationStatus}');
+    debugPrint('User granted permission: ${settings.authorizationStatus}');
+
+    await _firebaseMessaging.setForegroundNotificationPresentationOptions(
+      alert: true, // 팝업 띄우기
+      badge: true,
+      sound: true,
+    );
+
+    try {
+      const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const InitializationSettings initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
+      await _flutterLocalNotificationsPlugin.initialize(settings: initializationSettings);
+
+      const AndroidNotificationChannel channel = AndroidNotificationChannel(
+        'high_importance_channel', // id
+        'High Importance Notifications', // title
+        importance: Importance.max,
+      );
+
+      await _flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(channel);
+      debugPrint('flutter_local_notifications initialized successfully');
+    } catch (e) {
+      debugPrint('Error initializing flutter_local_notifications: $e');
+    }
 
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
       // FCM 기기 토큰 발급
       String? token = await _firebaseMessaging.getToken();
-      log('FCM Token: $token');
+      debugPrint('FCM Token: $token');
       
       if (token != null) {
         _sendTokenToServer(token);
@@ -50,31 +76,64 @@ class FCMService {
 
     // 포그라운드 메시지 리스너
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      log('Got a message whilst in the foreground!');
-      log('Message data: ${message.data}');
+      debugPrint('Got a message whilst in the foreground!');
+      debugPrint('Message data: ${message.data}');
 
-      if (message.notification != null) {
-        log('Message also contained a notification: ${message.notification}');
-        _showInAppNotification(context, message.notification!);
+      RemoteNotification? notification = message.notification;
+      AndroidNotification? android = message.notification?.android;
+      
+      debugPrint('Notification object: $notification, Android: $android');
+
+      if (notification != null) {
+        try {
+          _flutterLocalNotificationsPlugin.show(
+            id: notification.hashCode,
+            title: notification.title,
+            body: notification.body,
+            notificationDetails: const NotificationDetails(
+              android: AndroidNotificationDetails(
+                'high_importance_channel',
+                'High Importance Notifications',
+                importance: Importance.max,
+                priority: Priority.high,
+                icon: '@mipmap/ic_launcher',
+              ),
+            ),
+          );
+          debugPrint('Local notification shown successfully');
+        } catch (e) {
+          debugPrint('Error showing local notification: $e');
+        }
+      }
+      
+      if (notification != null) {
+        debugPrint('Message also contained a notification: $notification');
+        _showInAppNotification(context, notification);
       }
     });
 
     // 알림 클릭 리스너 (앱이 백그라운드 상태에서 클릭 시)
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      log('A new onMessageOpenedApp event was published!');
+      debugPrint('A new onMessageOpenedApp event was published!');
       _handleNotificationClick(context, message.data);
     });
   }
 
   void _sendTokenToServer(String token) async {
-    // 실제 서버가 준비되기 전까지는 로그만 출력하거나 더미 통신 시도
     try {
       final dio = Dio();
-      // 백엔드 명세에 맞춰 POST 요청
-      // await dio.post('http://10.0.2.2:8000/api/users/token', data: {'device_token': token});
-      log('Mock: Token sent to server - $token');
+      final response = await dio.post(
+        'http://44.195.33.82:8000/api/notifications/token',
+        data: {'device_token': token},
+        options: Options(contentType: 'application/json'),
+      );
+      if (response.statusCode == 200) {
+        debugPrint('Token sent to server successfully: $token');
+      } else {
+        debugPrint('Failed to send token to server. Status: ${response.statusCode}');
+      }
     } catch (e) {
-      log('Failed to send token to server: $e');
+      debugPrint('Error sending token to server: $e');
     }
   }
 
@@ -108,7 +167,7 @@ class FCMService {
     final resultId = data['result_id'];
     if (resultId != null) {
       // 딥링크 라우팅
-      log('Navigating to result detail: $resultId');
+      debugPrint('Navigating to result detail: $resultId');
       // Navigator.push 처리
     }
   }

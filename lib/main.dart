@@ -12,6 +12,7 @@ import 'core/ml/on_device_text_classifier.dart';
 import 'core/storage/app_storage.dart';
 import 'core/storage/database_helper.dart';
 import 'core/utils/masking_helper.dart';
+import 'core/utils/ner_classifier.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -79,6 +80,13 @@ void main() async {
   );
   await AppStorage.initDirectories();
   await onDeviceClassifier.initialize();
+
+  // NER 마스킹 모델 초기화
+  try {
+    await NerClassifier().initialize();
+  } catch (e) {
+    debugPrint('NerClassifier initialization failed: $e');
+  }
 
   // 앱 시작 시 로컬 DB에서 'CONFIRMED' 카드 모두 불러오기
   final dbRows = await DatabaseHelper.instance.getScreenshotsByStatus('CONFIRMED');
@@ -236,6 +244,7 @@ final globalSearchControllerProvider = Provider((ref) => TextEditingController()
 
 // 전역 데이터 보관함
 final savedCardsProvider = StateProvider<List<Map<String, dynamic>>>((ref) => []);
+final readNotificationsProvider = StateProvider<Set<String>>((ref) => {});
 
 // 장소 탭 전용 상태
 final placeRegionProvider = StateProvider<Set<String>>((ref) => {});
@@ -2124,6 +2133,25 @@ class HomeScreen extends ConsumerWidget {
     if (currentMenu == 'cat_2') currentTabIndex = 3;
     if (currentMenu == 'cat_3') currentTabIndex = 4;
 
+    int unreadCount = 0;
+    final savedCardsList = ref.watch(savedCardsProvider);
+    final readNotifs = ref.watch(readNotificationsProvider);
+    final _now = DateTime.now();
+    final _todayStr = "${_now.year}-${_now.month.toString().padLeft(2, '0')}-${_now.day.toString().padLeft(2, '0')}";
+    final _tomorrow = _now.add(const Duration(days: 1));
+    final _tomorrowStr = "${_tomorrow.year}-${_tomorrow.month.toString().padLeft(2, '0')}-${_tomorrow.day.toString().padLeft(2, '0')}";
+    for (var c in savedCardsList) {
+      if (c['categoryId'] == 0) {
+        final extraInfo = c['extraInfo']?.toString() ?? '';
+        final normalizedExtraInfo = extraInfo.replaceAll('/', '-');
+        if (normalizedExtraInfo.startsWith(_todayStr) || normalizedExtraInfo.startsWith(_tomorrowStr)) {
+          if (!readNotifs.contains(c['id'].toString())) {
+            unreadCount++;
+          }
+        }
+      }
+    }
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
@@ -2134,8 +2162,8 @@ class HomeScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: badges.Badge(
-              showBadge: true, // 안 읽은 알림이 있을 때만 true
-              badgeContent: const Text('2', style: TextStyle(color: Colors.white, fontSize: 10)),
+              showBadge: unreadCount > 0, // 안 읽은 알림이 있을 때만 true
+              badgeContent: Text(unreadCount.toString(), style: const TextStyle(color: Colors.white, fontSize: 10)),
               badgeStyle: const badges.BadgeStyle(
                 badgeColor: Colors.redAccent,
                 padding: EdgeInsets.all(4),

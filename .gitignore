@@ -48,3 +48,4 @@ on_device_ai/venv/
 on_device_ai/src/__pycache__/
 on_device_ai/build/
 /dataset.csv
+soseang.db
