@@ -64,12 +64,19 @@ def check_and_create_notifications():
             body = ""
             noti_title = ""
             
+            # 날짜를 읽기 쉽게 변환 (예: 2026-08-20 -> 8월 20일)
+            try:
+                date_obj = datetime.strptime(target_date, "%Y-%m-%d")
+                formatted_date = f"{date_obj.month}월 {date_obj.day}일"
+            except ValueError:
+                formatted_date = target_date
+                
             if target_date == today_str:
-                noti_title = "오늘 예정된 일정/마감"
-                body = f"오늘 마감/예정인 항목이 있습니다: {title}"
+                noti_title = f"🔔 {formatted_date} 오늘 일정 알림"
+                body = f"[{title}] 일정이 오늘({formatted_date}) 예정되어 있습니다."
             elif target_date == tomorrow_str:
-                noti_title = "내일 예정된 일정/마감"
-                body = f"내일 마감/예정인 항목이 있습니다: {title}"
+                noti_title = f"🔔 {formatted_date} 내일 일정 알림"
+                body = f"[{title}] 일정이 내일({formatted_date}) 예정되어 있습니다."
             else:
                 continue # 오늘이나 내일이 아니면 건너뜀
                 
