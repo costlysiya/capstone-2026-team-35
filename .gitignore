@@ -3,3 +3,6 @@ venv/
 soseng.db
 __pycache__/
 *.pyc
+
+# Secrets
+firebase-key.json
