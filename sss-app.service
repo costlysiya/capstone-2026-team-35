@@ -1,0 +1,13 @@
+[Unit]
+Description=SSS FastAPI Application
+After=network.target
+
+[Service]
+User=ubuntu
+Group=www-data
+WorkingDirectory=/home/ubuntu/SSS-app
+Environment="PATH=/home/ubuntu/SSS-app/venv/bin"
+ExecStart=/home/ubuntu/SSS-app/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+[Install]
+WantedBy=multi-user.target

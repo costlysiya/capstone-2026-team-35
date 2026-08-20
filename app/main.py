@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import init_db
 from app.routers import analyze, results, notifications
 from app.scheduler import start_scheduler
-from app.fcm import init_firebase
 
 app = FastAPI(
     title="소생 앱 API",
@@ -23,7 +22,6 @@ app.add_middleware(
 @app.on_event("startup")
 def startup():
     init_db()
-    init_firebase()
     start_scheduler()
 
 # 라우터 연결
