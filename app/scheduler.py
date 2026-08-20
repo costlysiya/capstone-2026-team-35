@@ -3,6 +3,7 @@ import logging
 import json
 from datetime import datetime, timedelta
 from app.database import get_db, save_notification
+from app.fcm import send_push_notification
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +84,16 @@ def check_and_create_notifications():
                 """, (device_token, result_id, noti_title)).fetchone()
                 
                 if not existing:
-                    save_notification(device_token, noti_title, body, result_id)
-                    logger.info(f"👉 알림 생성 완료: {title} (기기: {device_token[:8]}...)")
+                    noti_id = save_notification(device_token, noti_title, body, result_id)
+                    logger.info(f"👉 DB 알림 생성 완료: {title} (기기: {device_token[:8]}...)")
+                    
+                    # 🚀 기기에 실제 푸시 알림 발송 시도
+                    send_push_notification(
+                        device_token=device_token, 
+                        title=noti_title, 
+                        body=body,
+                        data={"result_id": str(result_id), "notification_id": str(noti_id)}
+                    )
     
     conn.close()
 
