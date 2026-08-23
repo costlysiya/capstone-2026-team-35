@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.example.soseang_app"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

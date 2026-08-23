@@ -12,7 +12,10 @@ import 'core/ml/on_device_text_classifier.dart';
 import 'core/storage/app_storage.dart';
 import 'core/storage/database_helper.dart';
 import 'core/utils/masking_helper.dart';
+
+
 import 'core/utils/ner_classifier.dart';
+import 'core/utils/crypto_helper.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -87,6 +90,13 @@ void main() async {
   } catch (e) {
     debugPrint('NerClassifier initialization failed: $e');
   }
+  
+  // 종단간 암호화(E2EE) 모듈 초기화
+  try {
+    await CryptoHelper().initialize();
+  } catch (e) {
+    debugPrint('CryptoHelper initialization failed: $e');
+  }
 
   // 앱 시작 시 로컬 DB에서 'CONFIRMED' 카드 모두 불러오기
   final dbRows = await DatabaseHelper.instance.getScreenshotsByStatus('CONFIRMED');
@@ -114,6 +124,11 @@ void main() async {
         rawFields = parsed;
       }
     } catch(e) {}
+
+    // [E2EE] 불러온 텍스트가 암호화되어 있다면 평문으로 복호화
+    title = CryptoHelper().decryptText(title);
+    content = CryptoHelper().decryptText(content);
+    extraInfo = CryptoHelper().decryptText(extraInfo);
 
     return {
       'id': row['id'].toString(),
@@ -861,6 +876,11 @@ class HomeScreen extends ConsumerWidget {
     }
     
     final maskedText = MaskingHelper.mask(rawText);
+    
+    // E2EE 로그 테스트 용도: 서버 전송 전에 어떻게 암호화되었는지 콘솔에 출력
+    debugPrint('🔒 [소생 앱] 서버 전송 전 암호화(마스킹) 완료 텍스트:');
+    debugPrint(maskedText);
+    
     ref.read(extractedTextProvider.notifier).state = maskedText;
 
     // 3. 기프티콘 여부 검사 후 로컬 선-정규화 기법 적용
@@ -914,11 +934,12 @@ class HomeScreen extends ConsumerWidget {
 
       final now = DateTime.now();
       final dateContextStr = '[현재 날짜: ${now.year}년 ${now.month}월 ${now.day}일]\n';
+      const promptHint = "[시스템 지시: 1. OCR 오인식은 교정하되 임의로 지어내지 말 것. 2. `[ENC:...` 형태로 된 문자열은 민감 정보가 암호화된 값임. 절대 이 문자열의 내용을 해석하거나 '암호화됨' 등의 말로 바꾸지 말고, `[ENC:...` 형태의 원본 문자열 그대로를 `id_number`, `card_number`, `passport_number` 등의 JSON 항목 값(value)으로 반드시 똑같이 복사하여 넣을 것.]\n\n";
       
       final response = await dio.post(
         serverUrl,
         data: {
-          'ocr_text': '$dateContextStr$maskedText',
+          'ocr_text': '$promptHint$dateContextStr$maskedText',
           'type': localType, // 로컬 AI 분류 결과를 필수 전송
           'masked_tokens': <String>[],
         },
@@ -926,7 +947,13 @@ class HomeScreen extends ConsumerWidget {
       ).timeout(const Duration(seconds: 15));
       
       if (response.statusCode == 200 && response.data != null) {
-        final rawData = response.data;
+        dynamic _decryptJson(dynamic data) {
+          if (data is String) return MaskingHelper.unmask(data, null);
+          if (data is List) return data.map((e) => _decryptJson(e)).toList();
+          if (data is Map) return data.map((k, v) => MapEntry(k.toString(), _decryptJson(v)));
+          return data;
+        }
+        final rawData = _decryptJson(response.data);
         final List<dynamic> dataList = rawData is List ? rawData : [rawData];
         if (dataList.isEmpty) return;
 
@@ -1053,6 +1080,12 @@ class HomeScreen extends ConsumerWidget {
               updatedContent = '$updatedContent\n$newContent';
             }
           }
+
+          newTitle = CryptoHelper().decryptText(newTitle);
+          newSchedule = CryptoHelper().decryptText(newSchedule);
+          newScheduleEnd = CryptoHelper().decryptText(newScheduleEnd);
+          newPlace = CryptoHelper().decryptText(newPlace);
+          updatedContent = CryptoHelper().decryptText(updatedContent);
 
           cacheMap2[image.path] = cacheMap2[image.path]!.copyWith(
             aiStatus: 'success',
@@ -1186,11 +1219,12 @@ class HomeScreen extends ConsumerWidget {
 
       final now = DateTime.now();
       final dateContextStr = '[현재 날짜: ${now.year}년 ${now.month}월 ${now.day}일]\n';
+      const promptHint = "[시스템 지시: 1. OCR 오인식은 교정하되 임의로 지어내지 말 것. 2. `[ENC:...` 형태로 된 문자열은 민감 정보가 암호화된 값임. 절대 이 문자열의 내용을 해석하거나 '암호화됨' 등의 말로 바꾸지 말고, `[ENC:...` 형태의 원본 문자열 그대로를 `id_number`, `card_number`, `passport_number` 등의 JSON 항목 값(value)으로 반드시 똑같이 복사하여 넣을 것.]\n\n";
 
       final response = await dio.post(
         serverUrl,
         data: {
-          'ocr_text': '$dateContextStr$maskedText',
+          'ocr_text': '$promptHint$dateContextStr$maskedText',
           'type': localType,
           'masked_tokens': <String>[],
         },
@@ -1198,7 +1232,13 @@ class HomeScreen extends ConsumerWidget {
       ).timeout(const Duration(seconds: 15));
       
       if (response.statusCode == 200 && response.data != null) {
-        final rawData = response.data;
+        dynamic _decryptJson(dynamic data) {
+          if (data is String) return MaskingHelper.unmask(data, null);
+          if (data is List) return data.map((e) => _decryptJson(e)).toList();
+          if (data is Map) return data.map((k, v) => MapEntry(k.toString(), _decryptJson(v)));
+          return data;
+        }
+        final rawData = _decryptJson(response.data);
         final List<dynamic> dataList = rawData is List ? rawData : [rawData];
         if (dataList.isEmpty) return;
 
@@ -1482,11 +1522,12 @@ class HomeScreen extends ConsumerWidget {
             }
           }
 
-          if (originalSensitiveInfo != null) {
-            itemTitle = MaskingHelper.unmask(itemTitle, originalSensitiveInfo);
-            itemContent = MaskingHelper.unmask(itemContent, originalSensitiveInfo);
-            itemExtraInfo = MaskingHelper.unmask(itemExtraInfo, originalSensitiveInfo);
-          }
+          // [E2EE] 로컬 DB 저장 전 암호화 취소 (사용자 요청: 로컬 저장 시 복호화 상태 유지)
+          // itemTitle = MaskingHelper.mask(itemTitle);
+          // itemContent = MaskingHelper.mask(itemContent);
+          // itemExtraInfo = MaskingHelper.mask(itemExtraInfo);
+          
+          debugPrint('🔒 [소생 앱 E2EE] 다중 아이템 DB 저장 전 암호화 생략 (Title: $itemTitle, Content: $itemContent)');
 
           final dbRow = {
             'type': indexToType[categoryId] ?? 'MEMO',
@@ -1527,11 +1568,12 @@ class HomeScreen extends ConsumerWidget {
           ref.read(savedCardsProvider.notifier).update((state) => [newCard, ...state]);
         }
       } else {
-        if (originalSensitiveInfo != null) {
-          title = MaskingHelper.unmask(title, originalSensitiveInfo);
-          content = MaskingHelper.unmask(content, originalSensitiveInfo);
-          extraInfo = MaskingHelper.unmask(extraInfo, originalSensitiveInfo);
-        }
+        // [E2EE] 로컬 DB 저장 전 암호화 취소 (사용자 요청: 로컬 저장 시 복호화 상태 유지)
+        // title = MaskingHelper.mask(title);
+        // content = MaskingHelper.mask(content);
+        // extraInfo = MaskingHelper.mask(extraInfo);
+        
+        debugPrint('🔒 [소생 앱 E2EE] DB 저장 전 암호화 생략 (Content: $content)');
 
         final dbRow = {
           'type': indexToType[categoryId] ?? 'MEMO',

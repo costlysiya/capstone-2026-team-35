@@ -1,6 +1,7 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:soseang_app/core/utils/ner_classifier.dart';
+import 'package:soseang_app/core/utils/crypto_helper.dart';
 
 class MaskingHelper {
   // Checks if a string contains any keywords (case-insensitive)
@@ -201,53 +202,63 @@ class MaskingHelper {
       String line = lines[i];
 
       // --- 주민등록번호 (RRN) ---
-      // Pattern: \d{6}-[1-4]\d{6}
-      final rrnRegex = RegExp(r'\d{6}-[1-4]\d{6}');
-      line = line.replaceAllMapped(rrnRegex, (match) => '******-*******');
+      // Pattern: 앞 6자리, 하이픈/공백(선택), 뒤 1~8 시작하는 7자리 (외국인 포함)
+      final rrnRegex = RegExp(r'\b\d{6}[-\s]?[1-8]\d{6}\b');
+      line = line.replaceAllMapped(rrnRegex, (match) => CryptoHelper().encryptSensitive(match.group(0)!));
 
       // --- 카드 번호 (Card Number) ---
-      // Pattern: \d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}
-      final cardRegex = RegExp(r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b');
+      // Pattern: 14~16자리 카드 번호 유연한 탐지 (아멕스 등 포함)
+      final cardRegex = RegExp(r'\b\d{4}[-\s]?\d{4,6}[-\s]?\d{4,5}(?:[-\s]?\d{1,4})?\b');
       if (cardRegex.hasMatch(line)) {
-        hasCardNumber = true;
-        line = line.replaceAllMapped(cardRegex, (match) => _maskDigits(match.group(0)!));
+        // Hybrid Matching: 16자리 표준이 아니면 주변(전체 텍스트)에 카드 키워드가 있는지 확인
+        final cardKeywords = ['카드', 'card', '신용', '체크', '비자', 'visa', 'master', 'amex'];
+        final isLikelyCard = _containsKeywords(text, cardKeywords) || RegExp(r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b').hasMatch(line);
+        if (isLikelyCard) {
+          hasCardNumber = true;
+          line = line.replaceAllMapped(cardRegex, (match) => CryptoHelper().encryptSensitive(match.group(0)!));
+        }
       }
 
       // --- CVC 관련 번호 (CVC / CVV / Security Code) ---
-      // Pattern: (CVC|CVV|보안코드|보안\s?카드)\s*[:.\-]?\s*([0-9]{3})\b
+      // Pattern: (CVC|CVV|보안코드|보안\s?카드)\s*[:.\-]?\s*([0-9]{3,4})\b (아멕스 4자리 대응)
       final cvcRegex = RegExp(
-        r'(CVC|CVV|보안코드|보안\s?카드)\s*[:.\-]?\s*([0-9]{3})\b',
+        r'(CVC|CVV|보안코드|보안\s?카드)\s*[:.\-]?\s*([0-9]{3,4})\b',
         caseSensitive: false,
       );
       line = line.replaceAllMapped(cvcRegex, (match) {
         final matchedString = match.group(0)!;
         final cvcVal = match.group(2)!;
-        final maskedVal = '***';
+        final maskedVal = CryptoHelper().encryptSensitive(cvcVal);
         return matchedString.replaceFirst(cvcVal, maskedVal);
       });
 
       // --- 쿠폰 코드 (Coupon Code) ---
-      // Pattern: \b\d{12}\b|\b\d{14}\b|\b\d{16}\b
-      final couponRegex = RegExp(r'\b\d{12}\b|\b\d{14}\b|\b\d{16}\b');
-      line = line.replaceAllMapped(couponRegex, (match) => _maskDigits(match.group(0)!));
+      // Pattern: \b\d{12,16}\b (12~16자리 바코드 유연한 허용)
+      final couponRegex = RegExp(r'\b\d{12,16}\b');
+      if (couponRegex.hasMatch(line)) {
+        // Hybrid Matching: 주변에 바코드/쿠폰 키워드가 있을 때만 마스킹 (숫자 오탐지 방지)
+        if (_containsKeywords(text, ['기프티콘', '쿠폰', '바코드', '교환권', '모바일상품권', '선물하기'])) {
+          line = line.replaceAllMapped(couponRegex, (match) => CryptoHelper().encryptSensitive(match.group(0)!));
+        }
+      }
 
       // --- 계좌번호 (Account Number) ---
-      // Pattern: \b\d{3,6}-\d{2,6}-\d{3,6}\b
-      final accountRegex = RegExp(r'\b\d{3,6}-\d{2,6}-\d{3,6}\b');
-      line = line.replaceAllMapped(accountRegex, (match) => _maskDigits(match.group(0)!));
+      // Pattern: 하이픈 2~4개까지 대응 가능
+      final accountRegex = RegExp(r'\b\d{2,6}(?:-\d{2,6}){1,4}\b');
+      if (accountRegex.hasMatch(line)) {
+        // Hybrid Matching: 주변에 은행 관련 키워드가 있을 때만 마스킹
+        final bankKeywords = ['은행', '계좌', '입금', '출금', '신한', '국민', '우리', '하나', '농협', '기업', '카카오뱅크', '토스'];
+        if (_containsKeywords(text, bankKeywords)) {
+          line = line.replaceAllMapped(accountRegex, (match) => CryptoHelper().encryptSensitive(match.group(0)!));
+        }
+      }
 
       // --- 휴대폰 번호 (Phone Number) ---
-      // Pattern: 010-XXXX-XXXX or 010XXXXXXXX
-      final phoneRegex = RegExp(r'(?:^|[^0-9])(010-\d{3,4}-\d{4}|010\d{7,8})(?:[^0-9]|$)');
+      // Pattern: 01X, 02 등 다양한 지역번호 및 구번호 허용
+      final phoneRegex = RegExp(r'(?:^|[^0-9])(0\d{1,2}[-\s]?\d{3,4}[-\s]?\d{4})(?:[^0-9]|$)');
       line = line.replaceAllMapped(phoneRegex, (match) {
         final val = match.group(1)!;
-        String maskedVal;
-        if (val.contains('-')) {
-          final parts = val.split('-');
-          maskedVal = '010-${'*' * parts[1].length}-${'*' * parts[2].length}';
-        } else {
-          maskedVal = '010${'*' * (val.length - 3)}';
-        }
+        String maskedVal = CryptoHelper().encryptSensitive(val);
         return match.group(0)!.replaceFirst(val, maskedVal);
       });
 
@@ -257,7 +268,8 @@ class MaskingHelper {
         final keyword = match.group(1)!;
         final resNum = match.group(2)!;
         final separator = match.group(0)!.substring(keyword.length, match.group(0)!.length - resNum.length);
-        return '$keyword$separator${'*' * resNum.length}';
+        final maskedVal = CryptoHelper().encryptSensitive(resNum);
+        return '$keyword$separator$maskedVal';
       });
 
       // --- 여권 관련 날짜 마스킹 (여권 정보 검출되었을 때만) ---
@@ -267,7 +279,7 @@ class MaskingHelper {
           r'\b\d{2}\s?\d{1,2}월\s?/\s?(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s?\d{4}\b',
           caseSensitive: false,
         );
-        line = line.replaceAllMapped(passportDateRegex, (match) => _maskAll(match.group(0)!));
+        line = line.replaceAllMapped(passportDateRegex, (match) => CryptoHelper().encryptSensitive(match.group(0)!));
       }
 
       // --- 운전면허증 관련 마스킹 (키워드 탐지 시) ---
@@ -275,7 +287,7 @@ class MaskingHelper {
         final licenseRegex = RegExp(
           r'\b(\d{2}|서울|부산|경기|강원|충북|충남|전북|전남|경북|경남|제주|인천|대구|대전|울산|광주)[-\s]?\d{2}[-\s]?\d{6}[-\s]?\d{2}\b',
         );
-        line = line.replaceAllMapped(licenseRegex, (match) => _maskDigits(match.group(0)!));
+        line = line.replaceAllMapped(licenseRegex, (match) => CryptoHelper().encryptSensitive(match.group(0)!));
       }
 
       // --- 주민등록증/운전면허증인 경우 주소 및 날짜 마스킹 ---
@@ -284,13 +296,13 @@ class MaskingHelper {
         final addressRegex = RegExp(
           r'\b(서울시|부산시|대구시|인천시|광주시|대전시|울산시|세종시|경기도|강원도|충청북도|충청남도|전라북도|전라남도|경상북도|경상남도|제주도|서울|부산|경기|강원|충북|충남|전북|전남|경북|경남|제주|인천|대구|대전|울산|광주)\s[가-힣0-9\s\-]+(시|군|구|읍|면|동|로|길|번지)\b',
         );
-        line = line.replaceAllMapped(addressRegex, (match) => _maskAll(match.group(0)!));
+        line = line.replaceAllMapped(addressRegex, (match) => CryptoHelper().encryptSensitive(match.group(0)!));
 
         // 날짜 패턴
         final idDateRegex = RegExp(
           r'\b\d{4}\.\d{2}\.\d{2}\b|\b\d{4}\.\d{2}\.\d{2}\s*~\s*\d{4}\.\d{2}\.\d{2}\b',
         );
-        line = line.replaceAllMapped(idDateRegex, (match) => _maskDigits(match.group(0)!));
+        line = line.replaceAllMapped(idDateRegex, (match) => CryptoHelper().encryptSensitive(match.group(0)!));
       }
 
       lines[i] = line;
@@ -309,7 +321,7 @@ class MaskingHelper {
           shouldMask = true;
         }
         if (shouldMask) {
-          lines[i] = '*' * line.length;
+          lines[i] = CryptoHelper().encryptSensitive(line);
         }
       }
     }
@@ -333,13 +345,13 @@ class MaskingHelper {
         if (hasKeyword) {
           lines[i] = lines[i].replaceAllMapped(passportNoRegex, (match) {
             maskedByKeywordRange = true;
-            return '*' * match.group(0)!.length;
+            return CryptoHelper().encryptSensitive(match.group(0)!);
           });
           
           if (i + 1 < lines.length) {
             lines[i + 1] = lines[i + 1].replaceAllMapped(passportNoRegex, (match) {
               maskedByKeywordRange = true;
-              return '*' * match.group(0)!.length;
+              return CryptoHelper().encryptSensitive(match.group(0)!);
             });
           }
         }
@@ -349,7 +361,7 @@ class MaskingHelper {
       //    이미 여권 문서임이 확정되었으므로 전체 문서에서 발견되는 여권번호 매칭 항목들을 강제로 마스킹합니다.
       if (!maskedByKeywordRange) {
         for (int i = 0; i < lines.length; i++) {
-          lines[i] = lines[i].replaceAllMapped(passportNoRegex, (match) => '*' * match.group(0)!.length);
+          lines[i] = lines[i].replaceAllMapped(passportNoRegex, (match) => CryptoHelper().encryptSensitive(match.group(0)!));
         }
       }
     }
@@ -358,7 +370,7 @@ class MaskingHelper {
     if (hasCardNumber) {
       final standalone3DigitRegex = RegExp(r'\b\d{3}\b');
       for (int i = 0; i < lines.length; i++) {
-        lines[i] = lines[i].replaceAllMapped(standalone3DigitRegex, (match) => '***');
+        lines[i] = lines[i].replaceAllMapped(standalone3DigitRegex, (match) => CryptoHelper().encryptSensitive(match.group(0)!));
       }
     }
 
@@ -372,8 +384,8 @@ class MaskingHelper {
     int score = 0;
 
     // --- 1. RRN (주민등록번호) 검사 ---
-    final rrnHyphenRegex = RegExp(r'\b\d{6}-[1-4]\d{6}\b');
-    final rrnLooseRegex = RegExp(r'\b\d{6}\s?[1-4]\d{6}\b');
+    final rrnHyphenRegex = RegExp(r'\b\d{6}-[1-8]\d{6}\b');
+    final rrnLooseRegex = RegExp(r'\b\d{6}\s?[1-8]\d{6}\b');
     if (rrnHyphenRegex.hasMatch(text)) {
       score += 10;
     } else if (rrnLooseRegex.hasMatch(text)) {
@@ -381,12 +393,15 @@ class MaskingHelper {
     }
 
     // --- 2. 카드 번호 및 CVC 검사 ---
-    final cardHyphenRegex = RegExp(r'\b\d{4}-\d{4}-\d{4}-\d{4}\b');
-    final cardLooseRegex = RegExp(r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b');
-    if (cardHyphenRegex.hasMatch(text)) {
-      score += 10;
-    } else if (cardLooseRegex.hasMatch(text)) {
-      score += 5;
+    final cardRegex = RegExp(r'\b\d{4}[-\s]?\d{4,6}[-\s]?\d{4,5}(?:[-\s]?\d{1,4})?\b');
+    if (cardRegex.hasMatch(text)) {
+      if (RegExp(r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b').hasMatch(text)) {
+        score += 10; // 표준 16자리
+      } else if (['카드', 'card', '신용', '체크', '비자', 'visa', 'master', 'amex'].any((k) => lowerText.contains(k))) {
+        score += 8; // 비표준이지만 카드 키워드 있음
+      } else {
+        score += 3; // 단순 숫자 배열 가능성
+      }
     }
     
     final cvcRegex = RegExp(r'(cvc|cvv|보안코드|보안\s?카드)\s*[:.\-]?\s*([0-9]{3})\b', caseSensitive: false);
@@ -520,63 +535,9 @@ class MaskingHelper {
   }
 
   static String unmask(String text, Map<String, dynamic>? originalInfo) {
-    if (originalInfo == null) return text;
-    String unmaskedText = text;
-
-    List<String> getList(String key) {
-      if (originalInfo[key] is List) {
-        return (originalInfo[key] as List).map((e) => e.toString()).toList();
-      }
-      return [];
-    }
-
-    // 1. RRN
-    final rrnList = getList('rrn');
-    for (final original in rrnList) {
-      unmaskedText = unmaskedText.replaceAll('******-*******', original);
-    }
-
-    // 2. Card, Account, Coupon, License
-    final digitsList = [
-      ...getList('card'),
-      ...getList('account'),
-      ...getList('coupon'),
-      ...getList('license'),
-    ];
-    for (final original in digitsList) {
-      final masked = _maskDigits(original);
-      unmaskedText = unmaskedText.replaceAll(masked, original);
-    }
-
-    // 3. Phone
-    final phoneList = getList('phone');
-    for (final original in phoneList) {
-      String masked;
-      if (original.contains('-')) {
-        final parts = original.split('-');
-        masked = '010-${'*' * parts[1].length}-${'*' * parts[2].length}';
-      } else {
-        masked = '010${'*' * (original.length - 3)}';
-      }
-      unmaskedText = unmaskedText.replaceAll(masked, original);
-    }
-
-    // 4. CVC
-    final cvcList = getList('cvc');
-    for (final original in cvcList) {
-      unmaskedText = unmaskedText.replaceAll('***', original);
-    }
-
-    // 5. Passport & Reservation (length-based asterisks)
-    final asteriskList = [
-      ...getList('passport'),
-      ...getList('reservation'),
-    ];
-    for (final original in asteriskList) {
-      final masked = '*' * original.length;
-      unmaskedText = unmaskedText.replaceAll(masked, original);
-    }
-
-    return unmaskedText;
+    // 기존에는 originalInfo를 사용해 ***를 다시 텍스트로 치환했지만,
+    // 이제는 종단간 암호화(E2EE) 방식이므로 CryptoHelper를 통해
+    // 문자열 내의 [ENC:...] 패턴을 복호화하여 반환합니다.
+    return CryptoHelper().decryptText(text);
   }
 }

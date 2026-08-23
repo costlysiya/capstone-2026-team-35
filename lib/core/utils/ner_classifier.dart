@@ -1,7 +1,9 @@
 import 'dart:convert';
-import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:tflite_flutter/tflite_flutter.dart';
 import 'ner_tokenizer.dart';
+import 'crypto_helper.dart';
 
 class NerClassifier {
   static final NerClassifier _instance = NerClassifier._internal();
@@ -25,7 +27,7 @@ class NerClassifier {
     await _tokenizer.loadVocab('assets/vocab.txt');
     
     // 3. 라벨 맵 로드
-    final labelStr = await rootBundle.loadString('assets/label_map.json');
+    final labelStr = await rootBundle.loadString('assets/ner_label_map.json');
     final Map<String, dynamic> rawLabelMap = jsonDecode(labelStr);
     _labelMap = rawLabelMap.map((key, value) => MapEntry(key.toString(), value.toString()));
     
@@ -112,8 +114,9 @@ class NerClassifier {
       final start = mergedRanges[i][0];
       final end = mergedRanges[i][1];
       if (start >= 0 && end <= maskedText.length) {
-        final maskStr = '*' * (end - start);
-        maskedText = maskedText.replaceRange(start, end, maskStr);
+        final originalStr = maskedText.substring(start, end);
+        final encryptedStr = CryptoHelper().encryptSensitive(originalStr);
+        maskedText = maskedText.replaceRange(start, end, encryptedStr);
       }
     }
     

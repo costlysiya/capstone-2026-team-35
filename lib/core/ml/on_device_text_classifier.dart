@@ -23,7 +23,7 @@ class OnDeviceTextClassifier {
       final idfStr = await rootBundle.loadString('assets/idf.json');
       _idf = List<double>.from(json.decode(idfStr));
       
-      final labelMapStr = await rootBundle.loadString('assets/label_map.json');
+      final labelMapStr = await rootBundle.loadString('assets/classifier_label_map.json');
       final tempMap = Map<String, dynamic>.from(json.decode(labelMapStr));
       _labelMap = tempMap.map((key, value) => MapEntry(int.parse(key), value.toString()));
       
