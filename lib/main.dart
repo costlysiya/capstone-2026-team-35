@@ -934,7 +934,7 @@ class HomeScreen extends ConsumerWidget {
 
       final now = DateTime.now();
       final dateContextStr = '[현재 날짜: ${now.year}년 ${now.month}월 ${now.day}일]\n';
-      const promptHint = "[시스템 지시: 1. OCR 오인식은 교정하되 임의로 지어내지 말 것. 2. `[ENC:...` 형태로 된 문자열은 민감 정보가 암호화된 값임. 절대 이 문자열의 내용을 해석하거나 '암호화됨' 등의 말로 바꾸지 말고, `[ENC:...` 형태의 원본 문자열 그대로를 `id_number`, `card_number`, `passport_number` 등의 JSON 항목 값(value)으로 반드시 똑같이 복사하여 넣을 것.]\n\n";
+      const promptHint = "[시스템 지시: 1. OCR 오인식은 교정하되 임의로 지어내지 말 것. 2. `[ENC:...` 형태로 된 문자열은 민감 정보가 암호화된 값임. 절대 이 문자열의 내용을 해석하거나 '암호화됨' 등의 말로 바꾸지 말고, `[ENC:...` 형태의 원본 문자열 그대로를 JSON 항목 값으로 넣을 것. 3. 호텔/숙소 예약, 티켓 등 하나의 연결된 일정은 여러 항목으로 분리하지 말고 단일 일정 객체 안에 `start_at`, `end_at`을 포함할 것. 4. 티켓의 '관람일(일시)'은 반드시 `start_at`에 기입할 것. 5. '취소마감일시'는 절대 `start_at`, `end_at`, `expires_at` 등 날짜 필드에 넣지 말고 무시하거나 `content`에만 넣을 것.]\n\n";
       
       final response = await dio.post(
         serverUrl,
@@ -989,10 +989,7 @@ class HomeScreen extends ConsumerWidget {
         // 1. SCHEDULE 매핑
         if (categoryIndex == 0) {
           final subType = firstFields['sub_type'] as String?;
-          final isGifticon = subType == 'GIFTICON' || 
-                             (firstFields['exchange_place'] != null) ||
-                             maskedText.contains('기프티콘') || 
-                             maskedText.contains('쿠폰');
+          final isGifticon = subType == 'GIFTICON';
                              
           if (isGifticon) {
             subCategoryIndex = 1;
@@ -1005,7 +1002,11 @@ class HomeScreen extends ConsumerWidget {
           
           final expiryDate = firstFields['expires_at'] as String?;
           final startDate = firstFields['start_at'] as String?;
-          newSchedule = expiryDate ?? startDate ?? '';
+          if (subCategoryIndex == 1) { // 기프티콘의 경우 유효기간(expires_at) 우선
+            newSchedule = expiryDate ?? startDate ?? '';
+          } else { // 일반 일정, 티켓 등의 경우 시작일/관람일(start_at) 우선
+            newSchedule = startDate ?? expiryDate ?? '';
+          }
 
           final endAt = firstFields['end_at'] as String?;
           final endTime = firstFields['end_time'] as String?;
@@ -1018,16 +1019,8 @@ class HomeScreen extends ConsumerWidget {
             newScheduleEnd = endTime;
           }
 
-          // 서버에서 일정을 여러 개(배열)로 분리 반환했을 경우, 두 번째 요소의 start_at을 종료일로 취급
-          if (newScheduleEnd.isEmpty && dataList.length > 1) {
-            final secondFields = dataList[1]['fields'] as Map<String, dynamic>?;
-            if (secondFields != null) {
-              final secondStart = secondFields['start_at'] as String?;
-              if (secondStart != null && (secondStart.contains('-') || secondStart.contains('/'))) {
-                newScheduleEnd = secondStart;
-              }
-            }
-          }
+          // 서버에서 단일 일정(호텔/항공권 등)에 대해 체크인/체크아웃을 분리하지 않도록 프롬프트를 개선했습니다.
+          // 따라서 두 번째 요소의 start_at을 첫 번째 요소의 end_at으로 강제로 가져오는 임시 로직은 다중 일정(진짜 일정이 2개인 경우)의 날짜를 꼬이게 하므로 제거합니다.
 
           // 시간(Time)은 부가 정보(Content)로 편입
           List<String> timeParts = [];
@@ -1219,7 +1212,7 @@ class HomeScreen extends ConsumerWidget {
 
       final now = DateTime.now();
       final dateContextStr = '[현재 날짜: ${now.year}년 ${now.month}월 ${now.day}일]\n';
-      const promptHint = "[시스템 지시: 1. OCR 오인식은 교정하되 임의로 지어내지 말 것. 2. `[ENC:...` 형태로 된 문자열은 민감 정보가 암호화된 값임. 절대 이 문자열의 내용을 해석하거나 '암호화됨' 등의 말로 바꾸지 말고, `[ENC:...` 형태의 원본 문자열 그대로를 `id_number`, `card_number`, `passport_number` 등의 JSON 항목 값(value)으로 반드시 똑같이 복사하여 넣을 것.]\n\n";
+      const promptHint = "[시스템 지시: 1. OCR 오인식은 교정하되 임의로 지어내지 말 것. 2. `[ENC:...` 형태로 된 문자열은 민감 정보가 암호화된 값임. 절대 이 문자열의 내용을 해석하거나 '암호화됨' 등의 말로 바꾸지 말고, `[ENC:...` 형태의 원본 문자열 그대로를 JSON 항목 값으로 넣을 것. 3. 호텔/숙소 예약, 티켓 등 하나의 연결된 일정은 여러 항목으로 분리하지 말고 단일 일정 객체 안에 `start_at`, `end_at`을 포함할 것. 4. 티켓의 '관람일(일시)'은 반드시 `start_at`에 기입할 것. 5. '취소마감일시'는 절대 `start_at`, `end_at`, `expires_at` 등 날짜 필드에 넣지 말고 무시하거나 `content`에만 넣을 것.]\n\n";
 
       final response = await dio.post(
         serverUrl,
@@ -1268,14 +1261,17 @@ class HomeScreen extends ConsumerWidget {
 
         if (categoryIndex == 0) {
           final subType = firstFields['sub_type'] as String?;
-          final isGifticon = subType == 'GIFTICON' || (firstFields['exchange_place'] != null) ||
-                             maskedText.contains('기프티콘') || maskedText.contains('쿠폰');
+          final isGifticon = subType == 'GIFTICON';
           subCategoryIndex = isGifticon ? 1 : 0;
           newTitle = firstFields['title'] ?? '새로운 일정';
           
           final expiryDate = firstFields['expires_at'] as String?;
           final startDate = firstFields['start_at'] as String?;
-          newSchedule = expiryDate ?? startDate ?? '';
+          if (subCategoryIndex == 1) {
+            newSchedule = expiryDate ?? startDate ?? '';
+          } else {
+            newSchedule = startDate ?? expiryDate ?? '';
+          }
 
           final endAt = firstFields['end_at'] as String?;
           final endTime = firstFields['end_time'] as String?;
@@ -1287,16 +1283,8 @@ class HomeScreen extends ConsumerWidget {
             newScheduleEnd = endTime;
           }
 
-          // 서버에서 일정을 여러 개(배열)로 분리 반환했을 경우, 두 번째 요소의 start_at을 종료일로 취급
-          if (newScheduleEnd.isEmpty && dataList.length > 1) {
-            final secondFields = dataList[1]['fields'] as Map<String, dynamic>?;
-            if (secondFields != null) {
-              final secondStart = secondFields['start_at'] as String?;
-              if (secondStart != null && (secondStart.contains('-') || secondStart.contains('/'))) {
-                newScheduleEnd = secondStart;
-              }
-            }
-          }
+          // 서버에서 단일 일정(호텔/항공권 등)에 대해 체크인/체크아웃을 분리하지 않도록 프롬프트를 개선했습니다.
+          // 따라서 두 번째 요소의 start_at을 첫 번째 요소의 end_at으로 강제로 가져오는 임시 로직은 다중 일정(진짜 일정이 2개인 경우)의 날짜를 꼬이게 하므로 제거합니다.
 
           List<String> timeParts = [];
           if (startTime != null && startTime.contains(':')) timeParts.add('⏰ 시작 시간: $startTime');
