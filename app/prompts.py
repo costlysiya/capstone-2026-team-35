@@ -367,6 +367,11 @@ def get_system_prompt():
     """기존 호환용 (1단계 통합 프롬프트)"""
     return CLASSIFY_PROMPT
 
+ENC_RULE = """
+⚠️ 개인정보 추출 규칙: 텍스트 내에 "[ENC:...]" 형태의 문구가 있다면 이는 주민번호, 전화번호, 카드번호 등 개인정보가 암호화/마스킹된 것입니다. 절대 무시하거나 누락시키지 말고, 추출할 필드나 본문(body, description 등)에 원문 그대로 또는 적절한 꼬리표(예: "주민번호: [ENC:...]")와 함께 반드시 포함시키세요.
+"""
+
 def get_type_prompt(screenshot_type: str) -> str:
     """타입별 상세 추출 프롬프트"""
-    return TYPE_PROMPTS.get(screenshot_type, MEMO_PROMPT)
+    base_prompt = TYPE_PROMPTS.get(screenshot_type, MEMO_PROMPT)
+    return base_prompt + ENC_RULE
