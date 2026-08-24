@@ -126,6 +126,7 @@ SCHEDULE_PROMPT = """당신은 일정·기한·예약 정보를 정밀하게 추
 - exchange_place: 교환처/사용처/장소
 - participants: 참여자 (대화에서 추출 가능할 경우, 리스트)
 - recurrence: 반복 주기 ("매주", "매월", "매년" 등). 없으면 null
+- cancellation_deadline: 취소/환불 마감일시 (YYYY-MM-DD HH:MM 형식). 없으면 null
 - sub_type: 세부 분류 ("GIFTICON"|"APPOINTMENT"|"TICKET"|"SUBSCRIPTION"|"DEADLINE"|"DELIVERY")
 - description: 기타 보충 정보
 
@@ -133,8 +134,9 @@ SCHEDULE_PROMPT = """당신은 일정·기한·예약 정보를 정밀하게 추
 - "26.08.15", "26/08/15" → "2026-08-15"
 - "8월 15일" → 현재 연도 기준으로 "YYYY-08-15"
 - "내일", "모레", "다음주 월요일" → 구체적 날짜 변환이 불가하면 원문 그대로 기록
-- "~까지", "유효기간", "만료일" 뒤의 날짜 → expires_at
-- "예약일", "시작일", "출발", "탑승" 뒤의 날짜 → start_at
+- "관람일", "예약일", "시작일", "출발", "탑승" 뒤의 실제 이벤트 날짜 → start_at
+- "~까지", "유효기간", "만료일" (기프티콘, 구독 등 혜택 만료) 뒤의 날짜 → expires_at
+- "취소마감", "환불가능" 뒤의 날짜 → cancellation_deadline (절대 start_at이나 expires_at에 넣지 말 것)
 
 ## 세부 분류(sub_type) 판단
 - 기프티콘/모바일쿠폰 → GIFTICON (reminder_days: [7, 3, 1] 자동 추천)
