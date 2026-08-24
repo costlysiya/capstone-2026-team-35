@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:tflite_flutter/tflite_flutter.dart';
 import 'ner_tokenizer.dart';
-import 'crypto_helper.dart';
+import 'package:soseang_app/core/utils/crypto_helper.dart';
 
 class NerClassifier {
   static final NerClassifier _instance = NerClassifier._internal();
@@ -114,9 +114,9 @@ class NerClassifier {
       final start = mergedRanges[i][0];
       final end = mergedRanges[i][1];
       if (start >= 0 && end <= maskedText.length) {
-        final originalStr = maskedText.substring(start, end);
-        final encryptedStr = CryptoHelper().encryptSensitive(originalStr);
-        maskedText = maskedText.replaceRange(start, end, encryptedStr);
+        final originalSpan = text.substring(start, end);
+        final encryptedSpan = CryptoHelper().encryptSensitive(originalSpan);
+        maskedText = maskedText.replaceRange(start, end, encryptedSpan);
       }
     }
     

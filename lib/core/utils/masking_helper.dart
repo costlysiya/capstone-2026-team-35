@@ -194,6 +194,10 @@ class MaskingHelper {
     final isRrnDoc = _containsKeywords(text, ['주민등록증']); // For address and dates of ID cards
     final isIdCard = isLicense || isRrnDoc;
 
+    // 🚀 1. 온디바이스 NER AI 모델을 통한 문맥 기반 1차 마스킹 (이름, 조직, 위치 등)
+    // 정규식으로 잡기 힘든 변형된 형태의 개인정보를 AI가 미리 차단(암호화)합니다.
+    text = NerClassifier().maskPii(text);
+
     List<String> lines = text.split('\n');
     bool hasCardNumber = false;
 
