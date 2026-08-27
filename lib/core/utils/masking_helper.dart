@@ -24,13 +24,15 @@ class MaskingHelper {
   // OCR 인식 에러(소문자 판독, 기호/점 등 잡음 포함)에 유연하게 대처할 수 있도록 개선
   static bool _isCandidateMrz(String l) {
     final clean = l.replaceAll(RegExp(r'\s+'), '');
-    if (clean.length < 30 || clean.length > 50) return false;
+    // OCR이 MRZ를 짧게 끊어서 인식할 수 있으므로 최소 길이를 10으로 대폭 낮춤
+    if (clean.length < 10 || clean.length > 60) return false;
 
     // 알파벳(대소문자), 숫자, '<' 기호의 개수를 셉니다.
     final mrzCharsCount = clean.replaceAll(RegExp(r'[^A-Za-z0-9<]'), '').length;
     
-    // 전체 글자 중 80% 이상이 MRZ 구성 문자라면 잡음이 섞인 MRZ 라인으로 판단합니다.
-    return (mrzCharsCount / clean.length) >= 0.80;
+    // 꺾쇠(<)가 2개 이상 포함되어 있거나, 전체 글자의 70% 이상이 MRZ 문자면 통과
+    bool hasBrackets = clean.split('<').length - 1 >= 2;
+    return hasBrackets || (mrzCharsCount / clean.length) >= 0.70;
   }
 
   // Removes system status bar (time, date, battery, carriers) at the very top of screenshots
@@ -314,19 +316,22 @@ class MaskingHelper {
 
     // --- 여권 맨 아래 판독 영역 (MRZ) 마스킹 (블록 매칭 방식) ---
     // 첫 번째 줄 and 두 번째 줄이 서로 인접해 있는 특성을 활용하여 꺾쇠(<)가 한쪽에만 있어도 세트로 마스킹 처리합니다.
+    List<bool> maskFlags = List.filled(lines.length, false);
     for (int i = 0; i < lines.length; i++) {
-      final line = lines[i];
-      if (_isCandidateMrz(line)) {
-        bool shouldMask = line.contains('<');
-        if (!shouldMask && i > 0 && _isCandidateMrz(lines[i - 1]) && lines[i - 1].contains('<')) {
-          shouldMask = true;
+      if (_isCandidateMrz(lines[i])) {
+        if (lines[i].contains('<')) {
+          maskFlags[i] = true;
+        } else if (i > 0 && _isCandidateMrz(lines[i - 1]) && lines[i - 1].contains('<')) {
+          maskFlags[i] = true;
+        } else if (i < lines.length - 1 && _isCandidateMrz(lines[i + 1]) && lines[i + 1].contains('<')) {
+          maskFlags[i] = true;
         }
-        if (!shouldMask && i < lines.length - 1 && _isCandidateMrz(lines[i + 1]) && lines[i + 1].contains('<')) {
-          shouldMask = true;
-        }
-        if (shouldMask) {
-          lines[i] = CryptoHelper().encryptSensitive(line);
-        }
+      }
+    }
+    
+    for (int i = 0; i < lines.length; i++) {
+      if (maskFlags[i]) {
+        lines[i] = CryptoHelper().encryptSensitive(lines[i]);
       }
     }
 

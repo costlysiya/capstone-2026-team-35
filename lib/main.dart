@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:kakao_flutter_sdk/kakao_flutter_sdk.dart';
+import 'services/kakao_calendar_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'; 
 import 'package:flutter_riverpod/legacy.dart'; 
 import 'package:image_picker/image_picker.dart';
@@ -81,6 +83,10 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  
+  // 카카오 SDK 초기화
+  KakaoSdk.init(nativeAppKey: 'da0556c528648683eace2cb91e45de9e');
+
   await AppStorage.initDirectories();
   await onDeviceClassifier.initialize();
 
@@ -2843,7 +2849,94 @@ class HomeScreen extends ConsumerWidget {
                                                  ),
                                                ),
                                              ],
-                                           )
+                                           ),
+                                           // 일반 일정(0) 또는 기프티콘(0)인 경우에만 카카오 캘린더 등록 버튼 표시
+                                           if (ref.watch(draftCacheProvider)[pickedImages[activeIndex].path]?.category == 0) ...[
+                                             const SizedBox(height: 10),
+                                             SizedBox(
+                                               width: double.infinity,
+                                               child: ElevatedButton.icon(
+                                                 onPressed: () async {
+                                                   final currentDraft = ref.read(draftCacheProvider)[pickedImages[activeIndex].path];
+                                                   if (currentDraft == null) return;
+                                                   
+                                                   // 사용자가 화면에서 직접 수정한 제목과 날짜를 가져옵니다.
+                                                   final uiTitle = ref.read(titleControllerProvider).text;
+                                                   final title = uiTitle.isNotEmpty ? uiTitle : (currentDraft.title.isNotEmpty ? currentDraft.title : '새로운 일정');
+                                                   
+                                                   String dateStr = ref.read(scheduleDateProvider).text;
+                                                   if (dateStr.isEmpty) {
+                                                     dateStr = ref.read(scheduleEndDateProvider).text;
+                                                   }
+                                                   
+                                                   // UI에 비어있으면 원본에서 폴백 (혹시 모를 상황 대비)
+                                                   if (dateStr.isEmpty) {
+                                                     final isGifticon = currentDraft.subCategory == 1;
+                                                     if (currentDraft.aiFields != null) {
+                                                        if (isGifticon) {
+                                                          dateStr = currentDraft.aiFields!['expiryDate'] ?? '';
+                                                        } else {
+                                                          dateStr = currentDraft.aiFields!['startDate'] ?? '';
+                                                        }
+                                                     }
+                                                     if (dateStr.isEmpty) dateStr = currentDraft.scheduleDate;
+                                                     if (dateStr.isEmpty) dateStr = currentDraft.scheduleEndDate;
+                                                   }
+
+                                                   if (dateStr.isEmpty) {
+                                                     ScaffoldMessenger.of(context).showSnackBar(
+                                                       const SnackBar(content: Text('캘린더에 등록할 날짜 정보를 찾을 수 없습니다.'))
+                                                     );
+                                                     return;
+                                                   }
+
+                                                   try {
+                                                     DateTime eventDate;
+                                                     String cleanDate = dateStr
+                                                         .replaceAll('년', '-')
+                                                         .replaceAll('월', '-')
+                                                         .replaceAll('일', '')
+                                                         .replaceAll('.', '-')
+                                                         .replaceAll('/', '-')
+                                                         .replaceAll(' ', '');
+                                                     if (cleanDate.endsWith('-')) {
+                                                       cleanDate = cleanDate.substring(0, cleanDate.length - 1);
+                                                     }
+                                                     eventDate = DateTime.parse(cleanDate);
+                                                     
+                                                     bool success = await KakaoCalendarService.createEvent(
+                                                       title: title,
+                                                       startAt: eventDate,
+                                                       endAt: eventDate.add(const Duration(hours: 1)),
+                                                     );
+
+                                                     if (success) {
+                                                       ScaffoldMessenger.of(context).showSnackBar(
+                                                         const SnackBar(content: Text('톡캘린더에 성공적으로 등록되었습니다! (D-7, D-1 알림 설정 완료)'))
+                                                       );
+                                                       _saveCurrentCardAndRemoveFromQueue(context, ref);
+                                                     } else {
+                                                       ScaffoldMessenger.of(context).showSnackBar(
+                                                         const SnackBar(content: Text('카카오 톡캘린더 등록에 실패했습니다.'))
+                                                       );
+                                                     }
+                                                   } catch (e) {
+                                                      ScaffoldMessenger.of(context).showSnackBar(
+                                                       SnackBar(content: Text('날짜 형식을 인식할 수 없습니다: $dateStr'))
+                                                     );
+                                                   }
+                                                 },
+                                                 icon: const Icon(Icons.calendar_month, color: Colors.black87),
+                                                 label: const Text('카카오 톡캘린더 연동 (알림톡 받기)', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
+                                                 style: ElevatedButton.styleFrom(
+                                                   backgroundColor: const Color(0xFFFEE500),
+                                                   foregroundColor: Colors.black87,
+                                                   padding: const EdgeInsets.symmetric(vertical: 12),
+                                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                                 ),
+                                               ),
+                                             ),
+                                           ],
                                         ],
                                       ),
                                     ),
