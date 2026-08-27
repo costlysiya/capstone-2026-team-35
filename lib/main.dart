@@ -1592,7 +1592,7 @@ class HomeScreen extends ConsumerWidget {
     ref.read(pickedImagesProvider.notifier).state = updatedImages;
 
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('💾 지정된 보관함 방으로 입고 및 로컬 DB에 안전하게 영구 저장되었습니다!')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('지정된 보관함으로 저장되었습니다!')));
     }
 
     if (updatedImages.isNotEmpty) {
@@ -1826,11 +1826,11 @@ class HomeScreen extends ConsumerWidget {
                         const SizedBox(height: 15),
                       ],
                       if (card['categoryId'] == 3 && card['rawFields'] != null) ...[
-                        const Text('✨ AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple, fontSize: 12)),
+                        const Text('AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple, fontSize: 12)),
                         const SizedBox(height: 5),
                         MemoDynamicUIWidget(fields: Map<String, dynamic>.from(card['rawFields'])),
                       ] else if (_hasValidAiFields(card['rawFields'])) ...[
-                        const Text('✨ AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple, fontSize: 12)),
+                        const Text('AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple, fontSize: 12)),
                         const SizedBox(height: 5),
                         _buildSavedAiFields(card['rawFields']),
                       ] else ...[
@@ -1924,7 +1924,7 @@ class HomeScreen extends ConsumerWidget {
                                                 if (aiFieldCtrls.isNotEmpty) ...[
                                                   const Align(
                                                     alignment: Alignment.centerLeft,
-                                                    child: Text('✨ AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple, fontSize: 12)),
+                                                    child: Text('AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple, fontSize: 12)),
                                                   ),
                                                   const SizedBox(height: 5),
                                                   Container(
@@ -3962,7 +3962,7 @@ class DynamicFeaturesCard extends ConsumerWidget {
                   children: [
                     Icon(Icons.auto_awesome, color: Colors.deepPurple, size: 16),
                     SizedBox(width: 6),
-                    Text('✨ AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.deepPurple)),
+                    Text('AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.deepPurple)),
                   ],
                 ),
                 if (hasItems)
