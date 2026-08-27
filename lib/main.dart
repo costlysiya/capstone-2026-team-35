@@ -28,6 +28,7 @@ import 'package:badges/badges.dart' as badges;
 import 'package:photo_manager/photo_manager.dart';
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 🎨 소생 앱 디자인 테마 (뮤트파스텔-아이보리-베이지)
@@ -148,9 +149,18 @@ void main() async {
     };
   }).toList();
 
+  List<String> loadedCustomSubTypes = [];
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    loadedCustomSubTypes = prefs.getStringList('custom_memo_sub_types') ?? [];
+  } catch (e) {
+    debugPrint('SharedPreferences load error: $e');
+  }
+
   runApp(ProviderScope(
     overrides: [
       savedCardsProvider.overrideWith((ref) => initialCards.reversed.toList()),
+      customSubTypesProvider.overrideWith((ref) => loadedCustomSubTypes),
     ],
     child: const MyApp()
   ));
@@ -271,6 +281,22 @@ final readNotificationsProvider = StateProvider<Set<String>>((ref) => {});
 final placeRegionProvider = StateProvider<Set<String>>((ref) => {});
 final placeSearchProvider = StateProvider<String>((ref) => '');
 final globalSearchProvider = StateProvider<String>((ref) => '');
+
+// 메모 세부 분류 관련
+final memoSubTypeProvider = StateProvider<String>((ref) => 'NOTE');           // 대기실에서 선택한 세부분류
+final memoSubTypeFilterProvider = StateProvider<Set<String>>((ref) => {});    // 보관함 필터용
+final customSubTypesProvider = StateProvider<List<String>>((ref) => []);      // 사용자 정의 세부분류 목록
+
+const kDefaultMemoSubTypes = ['RECIPE', 'QR_CODE', 'NOVEL', 'CHECKLIST', 'ARTICLE', 'NOTE', 'OTHER'];
+const kMemoSubTypeLabels = {
+  'RECIPE': '레시피',
+  'QR_CODE': 'QR코드',
+  'NOVEL': '소설/웹소설',
+  'CHECKLIST': '체크리스트',
+  'ARTICLE': '기사/아티클',
+  'NOTE': '일반 메모',
+  'OTHER': '기타',
+};
 
 // 🗓️ 캘린더 관련 상태 (일정 보관함)
 final focusedDayProvider = StateProvider<DateTime>((ref) => DateTime.now());
@@ -1043,6 +1069,11 @@ class HomeScreen extends ConsumerWidget {
         // 4. MEMO 매핑
         else if (categoryIndex == 3) {
           newTitle = firstFields['recipe_name'] ?? firstFields['book_title'] ?? firstFields['headline'] ?? firstFields['label'] ?? firstFields['title'] ?? '새로운 메모';
+          if (firstFields['sub_type'] != null && firstFields['sub_type'].toString().isNotEmpty) {
+            ref.read(memoSubTypeProvider.notifier).state = firstFields['sub_type'].toString();
+          } else {
+            ref.read(memoSubTypeProvider.notifier).state = 'NOTE';
+          }
         }
 
         // 캐시 업데이트: 다른 탭으로 이동해도 결과가 유지되도록 draft 전체에 저장
@@ -1383,6 +1414,7 @@ class HomeScreen extends ConsumerWidget {
     String content = ref.read(contentControllerProvider).text;
     final categoryId = ref.read(selectedCategoryProvider);
     final subCategoryId = ref.read(selectedSubCategoryProvider); 
+    final memoSubType = ref.read(memoSubTypeProvider);
     final images = ref.read(pickedImagesProvider);
     final activeIndex = ref.read(activeImageIndexProvider);
 
@@ -1416,6 +1448,7 @@ class HomeScreen extends ConsumerWidget {
     String extraInfo = "";
     if (categoryId == 0) extraInfo = ref.read(scheduleDateProvider).text;
     if (categoryId == 1) extraInfo = ref.read(placeLocationProvider).text;
+    if (categoryId == 3) extraInfo = memoSubType;
 
     // 기프티콘(0_1)과 위시리스트(2)만 갤러리 원본 스크린샷 사진 주소 저장
     String? finalImagePath;
@@ -1511,6 +1544,7 @@ class HomeScreen extends ConsumerWidget {
               'extraInfo': itemExtraInfo,
               'categoryId': categoryId,
               'subCategoryId': categoryId == 0 ? subCategoryId : 0,
+              if (categoryId == 3) 'sub_type': memoSubType,
             }),
             'image_path': finalImagePath,
             'status': 'CONFIRMED'
@@ -1534,6 +1568,7 @@ class HomeScreen extends ConsumerWidget {
               'extraInfo': itemExtraInfo,
               'categoryId': categoryId,
               'subCategoryId': categoryId == 0 ? subCategoryId : 0,
+              if (categoryId == 3) 'sub_type': memoSubType,
             },
           };
           ref.read(savedCardsProvider.notifier).update((state) => [newCard, ...state]);
@@ -1557,6 +1592,7 @@ class HomeScreen extends ConsumerWidget {
             'extraInfo': extraInfo,
             'categoryId': categoryId,
             'subCategoryId': categoryId == 0 ? subCategoryId : 0,
+            if (categoryId == 3) 'sub_type': memoSubType,
           }),
           'image_path': finalImagePath,
           'status': 'CONFIRMED' 
@@ -1580,6 +1616,7 @@ class HomeScreen extends ConsumerWidget {
             'extraInfo': extraInfo,
             'categoryId': categoryId,
             'subCategoryId': categoryId == 0 ? subCategoryId : 0,
+            if (categoryId == 3) 'sub_type': memoSubType,
           },
         };
         ref.read(savedCardsProvider.notifier).update((state) => [newCard, ...state]);
@@ -1818,11 +1855,12 @@ class HomeScreen extends ConsumerWidget {
                           card['categoryId'] == 0 && card['subCategoryId'] == 1
                               ? '⏳ 기프티콘 유효기간'
                               : card['categoryId'] == 0 ? '⏰ 일정 일시 설정'
+                              : card['categoryId'] == 3 ? '🏷️ 세부 분류'
                               : '🗺️ 장소 주소 및 명칭',
                           style: const TextStyle(fontWeight: FontWeight.bold, color: SoseangTheme.textMuted, fontSize: 12),
                         ),
                         const SizedBox(height: 4),
-                        Text(card['extraInfo'], style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: cardStyle['color'])),
+                        Text(card['categoryId'] == 3 ? (kMemoSubTypeLabels[card['extraInfo']] ?? card['extraInfo']) : card['extraInfo'], style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: cardStyle['color'])),
                         const SizedBox(height: 15),
                       ],
                       if (card['categoryId'] == 3 && card['rawFields'] != null) ...[
@@ -2640,6 +2678,82 @@ class HomeScreen extends ConsumerWidget {
                                           ),
                                           const SizedBox(height: 15),
                                           
+                                          if (selectedCategory == 3) ...[
+                                            Builder(
+                                              builder: (context) {
+                                                final customSubTypes = ref.watch(customSubTypesProvider);
+                                                final currentSubType = ref.watch(memoSubTypeProvider);
+                                                final allSubTypes = [...kDefaultMemoSubTypes, ...customSubTypes];
+                                                
+                                                final displayValue = allSubTypes.contains(currentSubType) ? currentSubType : (currentSubType == 'NOTE' ? 'NOTE' : '직접 입력');
+
+                                                return Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text('📂 메모 세부 분류', style: TextStyle(fontSize: 12, color: SoseangTheme.memoDark, fontWeight: FontWeight.bold)),
+                                                    const SizedBox(height: 6),
+                                                    DropdownButtonFormField<String>(
+                                                      value: displayValue,
+                                                      decoration: InputDecoration(
+                                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: SoseangTheme.border)),
+                                                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                                      ),
+                                                      items: [
+                                                        ...allSubTypes.map((type) {
+                                                          return DropdownMenuItem(
+                                                            value: type,
+                                                            child: Text(kMemoSubTypeLabels[type] ?? type, style: const TextStyle(fontSize: 14)),
+                                                          );
+                                                        }),
+                                                        const DropdownMenuItem(
+                                                          value: '직접 입력',
+                                                          child: Text('직접 입력...', style: TextStyle(fontSize: 14, color: Colors.blue)),
+                                                        ),
+                                                      ],
+                                                      onChanged: (val) async {
+                                                        if (val == '직접 입력') {
+                                                          String? newType = await showDialog<String>(
+                                                            context: context,
+                                                            builder: (ctx) {
+                                                              final ctrl = TextEditingController();
+                                                              return AlertDialog(
+                                                                title: const Text('세부 분류 직접 입력', style: TextStyle(fontSize: 16)),
+                                                                content: TextField(
+                                                                  controller: ctrl,
+                                                                  decoration: const InputDecoration(hintText: '예: 영수증, 회의록'),
+                                                                  autofocus: true,
+                                                                ),
+                                                                actions: [
+                                                                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
+                                                                  TextButton(
+                                                                    onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), 
+                                                                    child: const Text('추가')
+                                                                  ),
+                                                                ],
+                                                              );
+                                                            }
+                                                          );
+                                                          if (newType != null && newType.isNotEmpty) {
+                                                            if (!allSubTypes.contains(newType)) {
+                                                              final newList = [...customSubTypes, newType];
+                                                              ref.read(customSubTypesProvider.notifier).state = newList;
+                                                              final prefs = await SharedPreferences.getInstance();
+                                                              await prefs.setStringList('custom_memo_sub_types', newList);
+                                                            }
+                                                            ref.read(memoSubTypeProvider.notifier).state = newType;
+                                                          }
+                                                        } else if (val != null) {
+                                                          ref.read(memoSubTypeProvider.notifier).state = val;
+                                                        }
+                                                      },
+                                                    ),
+                                                  ],
+                                                );
+                                              }
+                                            ),
+                                            const SizedBox(height: 15),
+                                          ],
+                                          
                                           if (selectedCategory == 0) ...[
                                             if (selectedSubCategory == 0) ...[
                                               Row(
@@ -3224,6 +3338,105 @@ class HomeScreen extends ConsumerWidget {
                                           ),
                                           const SizedBox(height: 12),
                                         ],
+                                        if (currentMenu == 'cat_3') ...[
+                                          Builder(
+                                            builder: (ctx) {
+                                              final selectedSubtypes = ref.watch(memoSubTypeFilterProvider);
+                                              final customSubTypes = ref.watch(customSubTypesProvider);
+                                              final allSubTypes = [...kDefaultMemoSubTypes, ...customSubTypes];
+                                              
+                                              String btnText = '세부 분류 전체';
+                                              if (selectedSubtypes.isNotEmpty) {
+                                                final firstLabel = kMemoSubTypeLabels[selectedSubtypes.first] ?? selectedSubtypes.first;
+                                                btnText = firstLabel;
+                                                if (selectedSubtypes.length > 1) {
+                                                  btnText += ' 외 ${selectedSubtypes.length - 1}개';
+                                                }
+                                              }
+                                              return InkWell(
+                                                onTap: () {
+                                                  showDialog(
+                                                    context: context,
+                                                    builder: (dCtx) {
+                                                      final currentSelected = Set<String>.from(ref.read(memoSubTypeFilterProvider));
+                                                      return StatefulBuilder(
+                                                        builder: (context, setState) {
+                                                          return AlertDialog(
+                                                            title: const Text('세부 분류 다중 선택', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                                            contentPadding: const EdgeInsets.only(top: 12, bottom: 0),
+                                                            content: SizedBox(
+                                                              width: double.maxFinite,
+                                                              child: ListView.builder(
+                                                                shrinkWrap: true,
+                                                                itemCount: allSubTypes.length,
+                                                                itemBuilder: (context, index) {
+                                                                  final st = allSubTypes[index];
+                                                                  final label = kMemoSubTypeLabels[st] ?? st;
+                                                                  final count = savedCards.where((c) {
+                                                                    if (c['categoryId'] != 3) return false;
+                                                                    final extra = (c['extraInfo'] ?? '').toString();
+                                                                    final act = extra.isEmpty ? 'NOTE' : extra;
+                                                                    return act == st;
+                                                                  }).length;
+                                                                  return CheckboxListTile(
+                                                                    title: Text('$label ($count)', style: const TextStyle(fontSize: 14)),
+                                                                    value: currentSelected.contains(st),
+                                                                    activeColor: SoseangTheme.memoColor,
+                                                                    dense: true,
+                                                                    controlAffinity: ListTileControlAffinity.leading,
+                                                                    onChanged: (val) {
+                                                                      setState(() {
+                                                                        if (val == true) {
+                                                                          currentSelected.add(st);
+                                                                        } else {
+                                                                          currentSelected.remove(st);
+                                                                        }
+                                                                      });
+                                                                    },
+                                                                  );
+                                                                },
+                                                              ),
+                                                            ),
+                                                            actions: [
+                                                              TextButton(
+                                                                onPressed: () => setState(() => currentSelected.clear()),
+                                                                child: const Text('초기화', style: TextStyle(color: SoseangTheme.textMuted)),
+                                                              ),
+                                                              ElevatedButton(
+                                                                onPressed: () {
+                                                                  ref.read(memoSubTypeFilterProvider.notifier).state = currentSelected;
+                                                                  Navigator.pop(dCtx);
+                                                                },
+                                                                style: ElevatedButton.styleFrom(backgroundColor: SoseangTheme.memoColor, foregroundColor: Colors.black),
+                                                                child: const Text('적용'),
+                                                              ),
+                                                            ],
+                                                          );
+                                                        },
+                                                      );
+                                                    }
+                                                  );
+                                                },
+                                                child: Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                                  margin: const EdgeInsets.only(bottom: 12),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.white,
+                                                    borderRadius: BorderRadius.circular(20),
+                                                    border: Border.all(color: SoseangTheme.memoColor.withOpacity(0.5)),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    children: [
+                                                      Text(btnText, style: const TextStyle(fontSize: 14, color: SoseangTheme.memoDark)),
+                                                      const Icon(Icons.arrow_drop_down, color: SoseangTheme.memoDark),
+                                                    ],
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ],
                                         Row(
                                           children: [
                                         if (currentMenu.startsWith('cat_0')) ...[
@@ -3388,6 +3601,28 @@ class HomeScreen extends ConsumerWidget {
                                       return true;
                                     }
 
+                                    // 메모 보관함(cat_3) 검색 및 세부 분류 필터
+                                    if (currentMenu == 'cat_3') {
+                                      if (c['categoryId'] != targetCatId) return false;
+                                      
+                                      final gSearchStr = ref.watch(globalSearchProvider).trim().toLowerCase();
+                                      final subtypes = ref.watch(memoSubTypeFilterProvider);
+                                      
+                                      if (gSearchStr.isNotEmpty) {
+                                        final title = (c['title'] ?? '').toString().toLowerCase();
+                                        final content = (c['content'] ?? '').toString().toLowerCase();
+                                        final extra = (c['extraInfo'] ?? '').toString().toLowerCase();
+                                        if (!title.contains(gSearchStr) && !content.contains(gSearchStr) && !extra.contains(gSearchStr)) return false;
+                                      }
+                                      
+                                      if (subtypes.isNotEmpty) {
+                                        final extra = (c['extraInfo'] ?? '').toString();
+                                        final actualSubType = extra.isEmpty ? 'NOTE' : extra;
+                                        if (!subtypes.contains(actualSubType)) return false;
+                                      }
+                                      return true;
+                                    }
+
                                     // 날짜 미선택 시 평소 필터링
                                     if (targetSubCatId != null) {
                                       return c['categoryId'] == targetCatId && c['subCategoryId'] == targetSubCatId;
@@ -3462,7 +3697,7 @@ class HomeScreen extends ConsumerWidget {
                                                                 ],
                                                                 Expanded(
                                                                   child: Text(
-                                                                    card['extraInfo'],
+                                                                    card['categoryId'] == 3 ? (kMemoSubTypeLabels[card['extraInfo']] ?? card['extraInfo']) : card['extraInfo'],
                                                                     style: TextStyle(color: cardStyle['color'], fontSize: 13, fontWeight: FontWeight.w600),
                                                                     maxLines: 1,
                                                                     overflow: TextOverflow.ellipsis,
@@ -4171,6 +4406,11 @@ class DynamicFeaturesCard extends ConsumerWidget {
     } else if (itemCategory == 3) { // MEMO
       ref.read(titleControllerProvider).text = item['recipe_name'] ?? item['book_title'] ?? item['headline'] ?? item['label'] ?? item['title'] ?? '';
       ref.read(contentControllerProvider).text = item['content'] ?? item['body'] ?? '';
+      if (item['sub_type'] != null && item['sub_type'].toString().isNotEmpty) {
+        ref.read(memoSubTypeProvider.notifier).state = item['sub_type'].toString();
+      } else {
+        ref.read(memoSubTypeProvider.notifier).state = 'NOTE';
+      }
     }
   }
 }
