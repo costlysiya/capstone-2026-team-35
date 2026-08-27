@@ -2915,7 +2915,17 @@ class HomeScreen extends ConsumerWidget {
 
                                                    try {
                                                      DateTime eventDate;
-                                                     eventDate = DateTime.parse(dateStr.replaceAll('.', '-').trim());
+                                                     String cleanDate = dateStr
+                                                         .replaceAll('년', '-')
+                                                         .replaceAll('월', '-')
+                                                         .replaceAll('일', '')
+                                                         .replaceAll('.', '-')
+                                                         .replaceAll('/', '-')
+                                                         .replaceAll(' ', '');
+                                                     if (cleanDate.endsWith('-')) {
+                                                       cleanDate = cleanDate.substring(0, cleanDate.length - 1);
+                                                     }
+                                                     eventDate = DateTime.parse(cleanDate);
                                                      
                                                      bool success = await KakaoCalendarService.createEvent(
                                                        title: title,
