@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:kakao_flutter_sdk/kakao_flutter_sdk.dart';
+import 'services/kakao_calendar_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'; 
 import 'package:flutter_riverpod/legacy.dart'; 
 import 'package:image_picker/image_picker.dart';
@@ -81,6 +83,10 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  
+  // 카카오 SDK 초기화
+  KakaoSdk.init(nativeAppKey: 'da0556c528648683eace2cb91e45de9e');
+
   await AppStorage.initDirectories();
   await onDeviceClassifier.initialize();
 
@@ -2866,7 +2872,73 @@ class HomeScreen extends ConsumerWidget {
                                                  ),
                                                ),
                                              ],
-                                           )
+                                           ),
+                                           // 일반 일정(0) 또는 기프티콘(0_1)인 경우에만 카카오 캘린더 등록 버튼 표시
+                                           if (targetCatId == 0) ...[
+                                             const SizedBox(height: 10),
+                                             SizedBox(
+                                               width: double.infinity,
+                                               child: ElevatedButton.icon(
+                                                 onPressed: () async {
+                                                   // 1. 일정 날짜 추출
+                                                   final currentFields = ref.read(draftCacheProvider)[pickedImages[activeIndex].path]?.fields ?? {};
+                                                   final title = currentFields['title'] ?? '새로운 일정';
+                                                   final isGifticon = targetSubCatId == 1;
+                                                   
+                                                   String? dateStr;
+                                                   if (isGifticon) {
+                                                     dateStr = currentFields['expiryDate'];
+                                                   } else {
+                                                     dateStr = currentFields['startDate'];
+                                                   }
+                                                   
+                                                   if (dateStr == null || dateStr.isEmpty) {
+                                                     ScaffoldMessenger.of(context).showSnackBar(
+                                                       const SnackBar(content: Text('캘린더에 등록할 날짜 정보를 찾을 수 없습니다.'))
+                                                     );
+                                                     return;
+                                                   }
+
+                                                   try {
+                                                     DateTime eventDate;
+                                                     // 날짜 형식이 yyyy-MM-dd HH:mm 이거나 다양할 수 있으므로 간단히 파싱 시도
+                                                     eventDate = DateTime.parse(dateStr.replaceAll('.', '-').trim());
+                                                     
+                                                     // 2. 카카오 캘린더 서비스 호출
+                                                     bool success = await KakaoCalendarService.createEvent(
+                                                       title: title,
+                                                       startAt: eventDate,
+                                                       endAt: eventDate.add(const Duration(hours: 1)),
+                                                     );
+
+                                                     if (success) {
+                                                       ScaffoldMessenger.of(context).showSnackBar(
+                                                         const SnackBar(content: Text('톡캘린더에 성공적으로 등록되었습니다! (D-7, D-1 알림 설정 완료)'))
+                                                       );
+                                                       // 카카오 연동을 마쳤으므로 내부 DB에도 자동 저장 후 큐에서 제거
+                                                       _saveCurrentCardAndRemoveFromQueue(context, ref);
+                                                     } else {
+                                                       ScaffoldMessenger.of(context).showSnackBar(
+                                                         const SnackBar(content: Text('카카오 톡캘린더 등록에 실패했습니다.'))
+                                                       );
+                                                     }
+                                                   } catch (e) {
+                                                      ScaffoldMessenger.of(context).showSnackBar(
+                                                       SnackBar(content: Text('날짜 형식을 인식할 수 없습니다: $dateStr'))
+                                                     );
+                                                   }
+                                                 },
+                                                 icon: const Icon(Icons.calendar_month, color: Colors.black87),
+                                                 label: const Text('카카오 톡캘린더 연동 (알림톡 받기)', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
+                                                 style: ElevatedButton.styleFrom(
+                                                   backgroundColor: const Color(0xFFFEE500), // 카카오 메인 컬러
+                                                   foregroundColor: Colors.black87,
+                                                   padding: const EdgeInsets.symmetric(vertical: 12),
+                                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                                 ),
+                                               ),
+                                             ),
+                                           ],
                                         ],
                                       ),
                                     ),
