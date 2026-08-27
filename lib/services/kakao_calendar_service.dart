@@ -58,13 +58,19 @@ class KakaoCalendarService {
       if (token == null) return false;
 
       final dio = Dio();
+      // 종일 일정(all_day: true)의 경우 Kakao API 요구사항에 따라 00:00:00Z로 포맷팅
+      final startAtStr = "${startAt.toIso8601String().split('T')[0]}T00:00:00Z";
+      // 종일 일정이어도 end_at이 start_at보다 커야 하므로 다음 날 00:00:00Z로 설정합니다.
+      final nextDay = startAt.add(const Duration(days: 1));
+      final endAtStr = "${nextDay.toIso8601String().split('T')[0]}T00:00:00Z";
+      
       final eventData = {
         "title": title,
         "time": {
-          "start_at": startAt.toIso8601String() + "Z",
-          "end_at": endAt.toIso8601String() + "Z",
+          "start_at": startAtStr,
+          "end_at": endAtStr,
           "time_zone": "Asia/Seoul",
-          "all_day": false
+          "all_day": true
         },
         "reminders": [1440, 10080]
       };
