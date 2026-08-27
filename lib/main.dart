@@ -2873,26 +2873,40 @@ class HomeScreen extends ConsumerWidget {
                                                ),
                                              ],
                                            ),
-                                           // 일반 일정(0) 또는 기프티콘(0_1)인 경우에만 카카오 캘린더 등록 버튼 표시
-                                           if (targetCatId == 0) ...[
+                                           // 일반 일정(0) 또는 기프티콘(0)인 경우에만 카카오 캘린더 등록 버튼 표시
+                                           if (ref.watch(draftCacheProvider)[pickedImages[activeIndex].path]?.category == 0) ...[
                                              const SizedBox(height: 10),
                                              SizedBox(
                                                width: double.infinity,
                                                child: ElevatedButton.icon(
                                                  onPressed: () async {
-                                                   // 1. 일정 날짜 추출
-                                                   final currentFields = ref.read(draftCacheProvider)[pickedImages[activeIndex].path]?.fields ?? {};
-                                                   final title = currentFields['title'] ?? '새로운 일정';
-                                                   final isGifticon = targetSubCatId == 1;
+                                                   final currentDraft = ref.read(draftCacheProvider)[pickedImages[activeIndex].path];
+                                                   if (currentDraft == null) return;
                                                    
-                                                   String? dateStr;
-                                                   if (isGifticon) {
-                                                     dateStr = currentFields['expiryDate'];
-                                                   } else {
-                                                     dateStr = currentFields['startDate'];
+                                                   // 사용자가 화면에서 직접 수정한 제목과 날짜를 가져옵니다.
+                                                   final uiTitle = ref.read(titleControllerProvider).text;
+                                                   final title = uiTitle.isNotEmpty ? uiTitle : (currentDraft.title.isNotEmpty ? currentDraft.title : '새로운 일정');
+                                                   
+                                                   String dateStr = ref.read(scheduleDateProvider).text;
+                                                   if (dateStr.isEmpty) {
+                                                     dateStr = ref.read(scheduleEndDateProvider).text;
                                                    }
                                                    
-                                                   if (dateStr == null || dateStr.isEmpty) {
+                                                   // UI에 비어있으면 원본에서 폴백 (혹시 모를 상황 대비)
+                                                   if (dateStr.isEmpty) {
+                                                     final isGifticon = currentDraft.subCategory == 1;
+                                                     if (currentDraft.aiFields != null) {
+                                                        if (isGifticon) {
+                                                          dateStr = currentDraft.aiFields!['expiryDate'] ?? '';
+                                                        } else {
+                                                          dateStr = currentDraft.aiFields!['startDate'] ?? '';
+                                                        }
+                                                     }
+                                                     if (dateStr.isEmpty) dateStr = currentDraft.scheduleDate;
+                                                     if (dateStr.isEmpty) dateStr = currentDraft.scheduleEndDate;
+                                                   }
+
+                                                   if (dateStr.isEmpty) {
                                                      ScaffoldMessenger.of(context).showSnackBar(
                                                        const SnackBar(content: Text('캘린더에 등록할 날짜 정보를 찾을 수 없습니다.'))
                                                      );
@@ -2901,10 +2915,8 @@ class HomeScreen extends ConsumerWidget {
 
                                                    try {
                                                      DateTime eventDate;
-                                                     // 날짜 형식이 yyyy-MM-dd HH:mm 이거나 다양할 수 있으므로 간단히 파싱 시도
                                                      eventDate = DateTime.parse(dateStr.replaceAll('.', '-').trim());
                                                      
-                                                     // 2. 카카오 캘린더 서비스 호출
                                                      bool success = await KakaoCalendarService.createEvent(
                                                        title: title,
                                                        startAt: eventDate,
@@ -2915,7 +2927,6 @@ class HomeScreen extends ConsumerWidget {
                                                        ScaffoldMessenger.of(context).showSnackBar(
                                                          const SnackBar(content: Text('톡캘린더에 성공적으로 등록되었습니다! (D-7, D-1 알림 설정 완료)'))
                                                        );
-                                                       // 카카오 연동을 마쳤으므로 내부 DB에도 자동 저장 후 큐에서 제거
                                                        _saveCurrentCardAndRemoveFromQueue(context, ref);
                                                      } else {
                                                        ScaffoldMessenger.of(context).showSnackBar(
@@ -2931,7 +2942,7 @@ class HomeScreen extends ConsumerWidget {
                                                  icon: const Icon(Icons.calendar_month, color: Colors.black87),
                                                  label: const Text('카카오 톡캘린더 연동 (알림톡 받기)', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
                                                  style: ElevatedButton.styleFrom(
-                                                   backgroundColor: const Color(0xFFFEE500), // 카카오 메인 컬러
+                                                   backgroundColor: const Color(0xFFFEE500),
                                                    foregroundColor: Colors.black87,
                                                    padding: const EdgeInsets.symmetric(vertical: 12),
                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
