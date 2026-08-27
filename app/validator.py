@@ -126,8 +126,6 @@ def _enrich_memo_fields(fields: dict) -> dict:
         fields["title"] = fields["recipe_name"]
     elif sub_type == "ARTICLE" and fields.get("headline"):
         fields["title"] = fields["headline"]
-    elif sub_type == "QR_CODE" and fields.get("label"):
-        fields["title"] = fields["label"]
     elif not fields.get("title"):
         # sub_type 매칭이 안 되었고 title도 비어있을 때만 폴백
         if fields.get("book_title"):
@@ -136,8 +134,6 @@ def _enrich_memo_fields(fields: dict) -> dict:
             fields["title"] = fields["recipe_name"]
         elif fields.get("headline"):
             fields["title"] = fields["headline"]
-        elif fields.get("label"):
-            fields["title"] = fields["label"]
         elif fields.get("body"):
             body = fields["body"]
             fields["title"] = body[:30] + ("..." if len(body) > 30 else "")
