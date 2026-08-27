@@ -18,16 +18,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["분석"])
 
-# 인메모리 작업 상태 저장소 (실무에서는 Redis나 DB 활용 권장)
+# In-memory task state store
 _task_store: dict[str, dict] = {}
 
 
 def _extract_fields(raw: dict) -> dict:
-    """
-    GPT 응답에서 fields 데이터를 안전하게 꺼내는 함수.
-    GPT는 응답 형식을 맘대로 바꾸기 때문에 여러 케이스를 처리한다.
-    """
-    # 케이스 1: 정상적으로 "fields" 키가 있는 경우
+    """Safely extract fields from LLM response."""
+    # Case 1: "fields" key exists
     if "fields" in raw:
         fields = raw["fields"]
         if isinstance(fields, list):
@@ -36,7 +33,7 @@ def _extract_fields(raw: dict) -> dict:
             return fields
         return {}
 
-    # 케이스 2: "places", "items", "results", "products" 등 대체 키
+    # Case 2: Alternative keys
     alt_keys = ["places", "items", "results", "products", "data"]
     for key in alt_keys:
         if key in raw and isinstance(raw[key], (list, dict)):
@@ -45,13 +42,12 @@ def _extract_fields(raw: dict) -> dict:
                 return {"items": val}
             return val
 
-    # 케이스 3: 메타 키를 제외한 나머지가 실제 필드 데이터인 경우
-    # 예: {"name": "재경사", "region": "대구", "missing_fields": []}
+    # Case 3: Extract non-meta keys
     meta_keys = {"type", "confidence", "missing_fields", "reasoning", "error", "status"}
     remaining = {k: v for k, v in raw.items() if k not in meta_keys}
 
     if remaining:
-        # 남은 값 중에 리스트 하나만 있고 그 안에 딕셔너리들이면 → 복수 항목
+        # If remaining is a single list of dicts, treat as plural items
         values = list(remaining.values())
         if len(values) == 1 and isinstance(values[0], list):
             return {"items": values[0]}
@@ -61,7 +57,7 @@ def _extract_fields(raw: dict) -> dict:
 
 
 def _detect_token_type(token: str) -> str:
-    """마스킹된 원본 토큰의 종류를 정규식으로 판별"""
+    """Determine original token type from masked token via regex."""
     clean = re.sub(r'[\-\s]', '', token)
     
     if re.match(r'^[\d\*]{16}$', clean):
@@ -81,7 +77,7 @@ def _detect_token_type(token: str) -> str:
 
 @router.post("/analyze", response_model=AnalyzeResponse)
 def analyze_screenshot(request: AnalyzeRequest):
-    """OCR 텍스트를 받아 분류 + 구조화 (v1)"""
+    """Analyze OCR text and extract structured data (v1)."""
     try:
         result = call_llm(
             system_prompt=get_system_prompt(),
@@ -110,12 +106,12 @@ def analyze_screenshot(request: AnalyzeRequest):
     
 @router.post("/analyze/v2", response_model=AnalyzeResponse | list[AnalyzeResponse])
 async def analyze_v2(request: AnalyzeRequest):
-    """2단계 분석: 분류 → 타입별 상세 추출"""
+    """Two-stage analysis: Classify -> Detail Extraction."""
     
-    # 📥 요청 내용 로깅 — 앱에서 뭘 보냈는지 확인
+    # Log incoming request
     logger.info(f"[v2] 📥 요청 수신 | type: {request.type} | ocr_text({len(request.ocr_text)}자): {request.ocr_text[:200]}{'...' if len(request.ocr_text) > 200 else ''}")
 
-    # 🗃️ 캐시 확인: 동일 이미지가 이미 분석된 적 있으면 재사용
+    # Check cache
     if request.image_hash:
         cached_list = get_results_by_hash(request.image_hash)
         if cached_list:
@@ -138,7 +134,7 @@ async def analyze_v2(request: AnalyzeRequest):
                 ))
             return responses if len(responses) > 1 else responses[0]
 
-    # 🛡️ 입력 검증: 너무 짧은 텍스트
+    # Validate input length
     clean_text = request.ocr_text.strip()
     if len(clean_text) < 3:
         return AnalyzeResponse(

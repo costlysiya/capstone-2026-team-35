@@ -29,9 +29,7 @@ def _do_call_llm(system_prompt: str, user_text: str) -> dict:
 
 def call_llm(system_prompt: str, user_text: str, max_retries: int = 3) -> dict:
     """
-    LLM을 안전하게 호출하는 함수 (Tenacity 적용)
-    - 실패 시 지수적 백오프(Exponential Backoff)로 최대 3번 재시도
-    - 최종 실패 시 에러 딕셔너리 반환
+    Call LLM safely with Exponential Backoff (Tenacity).
     """
     try:
         return _do_call_llm(system_prompt, user_text)

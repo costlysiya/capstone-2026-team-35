@@ -9,7 +9,7 @@ def format_ics_datetime(date_str: str, time_str: str = None) -> str:
     date_clean = date_str.replace("-", "")
     if time_str:
         time_clean = time_str.replace(":", "")
-        # 초(SS)가 없을 경우 00 추가
+        # Append 00 for seconds if missing
         if len(time_clean) == 4:
             time_clean += "00"
         return f"{date_clean}T{time_clean}"
@@ -25,23 +25,23 @@ def generate_ics(fields: dict) -> str:
     start_time = fields.get("start_time")
     end_time = fields.get("end_time")
     
-    # 시작일이 없으면 만료일을 시작일로 사용
+    # Fallback start_at to expires_at
     if not start_at and expires_at:
         start_at = expires_at
         
-    # 만약 둘 다 없으면 오늘 날짜를 임시로 사용
+    # Fallback to current date if both are missing
     if not start_at:
         start_at = datetime.now().strftime("%Y-%m-%d")
 
     dtstart = format_ics_datetime(start_at, start_time)
     
-    # 종료일이 없으면 시작일과 동일하게 처리 (혹은 1시간 뒤)
+    # Default end_at to start_at + 1 hour
     if end_time and not expires_at:
         dtend = format_ics_datetime(start_at, end_time)
     elif expires_at:
         dtend = format_ics_datetime(expires_at, end_time)
     else:
-        # 종료 시간도 없으면 그냥 Date event
+        # Treat as all-day Date event if end_time is missing
         dtend = dtstart
 
     description = fields.get("description", "")
@@ -50,7 +50,7 @@ def generate_ics(fields: dict) -> str:
     uid = str(uuid.uuid4())
     now_stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
-    # .ics 포맷 구성
+    # Generate .ics format
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
@@ -62,7 +62,7 @@ def generate_ics(fields: dict) -> str:
         f"SUMMARY:{title}",
     ]
     
-    # 날짜(Date) 전용 이벤트인지, 시간(DateTime) 포함 이벤트인지에 따라 속성명 분기
+    # DTSTART/DTEND property names depend on whether it's an all-day event
     if "T" in dtstart:
         lines.append(f"DTSTART:{dtstart}")
     else:
@@ -71,14 +71,14 @@ def generate_ics(fields: dict) -> str:
     if "T" in dtend:
         lines.append(f"DTEND:{dtend}")
     else:
-        # iCal 스펙상 하루 종일(Date) 이벤트의 끝날짜는 다음 날이어야 하지만, 여기서는 단순히 기록
+        # Add 1 day to end_date for all-day events (iCal standard)
         lines.append(f"DTEND;VALUE=DATE:{dtend}")
 
     if location:
         lines.append(f"LOCATION:{location}")
         
     if description:
-        # 줄바꿈 이스케이프
+        # Escape newlines
         desc_clean = description.replace("\n", "\\n")
         lines.append(f"DESCRIPTION:{desc_clean}")
         
@@ -87,5 +87,5 @@ def generate_ics(fields: dict) -> str:
         "END:VCALENDAR"
     ])
     
-    # CRLF로 조인하는 것이 ICS 표준 권장
+    # Join with CRLF (iCal standard)
     return "\r\n".join(lines)

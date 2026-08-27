@@ -10,12 +10,12 @@ app = FastAPI(
     version="0.2.0"
 )
 
-# ✅ CORS 설정 — Flutter 앱에서의 요청을 허용
+# CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # 개발 중에는 전체 허용 (배포 시 제한)
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],          # GET, POST, PUT, DELETE 모두 허용
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -24,7 +24,7 @@ def startup():
     init_db()
     start_scheduler()
 
-# 라우터 연결
+# Include routers
 app.include_router(analyze.router)
 app.include_router(results.router)
 app.include_router(notifications.router)

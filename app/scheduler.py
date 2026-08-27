@@ -7,24 +7,22 @@ from app.database import get_db, save_notification
 logger = logging.getLogger(__name__)
 
 async def notification_scheduler_job():
-    """1시간마다 DB를 검사하여 다가오는 일정/기프티콘 알림을 생성합니다."""
-    logger.info("🚀 백그라운드 스케줄러가 시작되었습니다. (1시간 주기)")
+    """Check DB periodically to create upcoming notifications."""
+    logger.info("Notification scheduler started.")
     while True:
         try:
-            logger.info("⏰ 스케줄러: 알림 생성 체크 시작...")
+            logger.info("Checking for new notifications...")
             check_and_create_notifications()
-            logger.info("⏰ 스케줄러: 알림 생성 체크 완료.")
+            logger.info("Notification check complete.")
         except Exception as e:
-            logger.error(f"알림 스케줄러 에러: {e}")
+            logger.error(f"Scheduler error: {e}")
             
-        # 테스트용: 1분(60초) 대기 (기존: 3600초)
         await asyncio.sleep(60)
 
 def check_and_create_notifications():
-    """DB에서 오늘/내일 만료되는 일정을 찾아 알림 테이블에 저장"""
+    """Find schedules expiring today/tomorrow and save to notifications table."""
     conn = get_db()
     
-    # 1. 등록된 모든 기기 토큰 가져오기 (현재 구조상 모든 기기에 알림을 저장)
     tokens_row = conn.execute("SELECT token FROM device_tokens").fetchall()
     if not tokens_row:
         conn.close()
@@ -34,7 +32,6 @@ def check_and_create_notifications():
     today_str = now.strftime("%Y-%m-%d")
     tomorrow_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
     
-    # 2. 저장된 일정 및 기프티콘 가져오기 (DRAFT, CONFIRMED 모두 포함)
     rows = conn.execute("SELECT id, type, fields FROM screenshots WHERE type IN ('SCHEDULE', 'GIFTICON') AND status IN ('DRAFT', 'CONFIRMED')").fetchall()
     
     for row in rows:
@@ -45,7 +42,6 @@ def check_and_create_notifications():
         except json.JSONDecodeError:
             continue
             
-        # 단일 추출이든 다중 추출이든 리스트 형태로 묶어서 순회
         items = fields if isinstance(fields, list) else [fields]
             
         for item in items:
@@ -53,7 +49,6 @@ def check_and_create_notifications():
                 continue
                 
             title = item.get("title", "일정")
-            # 만료일(expires_at) 또는 시작일(start_at) 기준
             target_date = item.get("expires_at") or item.get("start_at")
             
             if not target_date:

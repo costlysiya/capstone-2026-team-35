@@ -3,10 +3,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# 동시 LLM 호출 최대 수 (동시에 3개까지만 허용)
+# Max concurrent LLM API calls
 MAX_CONCURRENT_LLM = 3
 
-# threading 기반 세마포어 (sync 엔드포인트용)
+# Semaphore for sync endpoints
 _llm_semaphore = threading.Semaphore(MAX_CONCURRENT_LLM)
 
 
