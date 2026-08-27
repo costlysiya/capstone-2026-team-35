@@ -6,6 +6,12 @@ import 'package:kakao_flutter_sdk/kakao_flutter_sdk.dart';
 class KakaoCalendarService {
   static Future<bool> loginAndGetCalendarPermission() async {
     try {
+      final origin = await KakaoSdk.origin;
+      debugPrint('\n=============================================');
+      debugPrint('🔑 카카오 안드로이드 키 해시: $origin');
+      debugPrint('이 값을 복사해서 카카오 디벨로퍼스에 넣으세요!');
+      debugPrint('=============================================\n');
+
       final bool isInstalled = await isKakaoTalkInstalled();
       List<String> scopes = ['talk_calendar'];
 
@@ -82,7 +88,11 @@ class KakaoCalendarService {
       }
       return false;
     } catch (e) {
-      debugPrint('카카오 톡캘린더 등록 실패: $e');
+      if (e is DioException) {
+        debugPrint('카카오 톡캘린더 등록 실패(Dio): ${e.response?.statusCode} - ${e.response?.data}');
+      } else {
+        debugPrint('카카오 톡캘린더 등록 실패: $e');
+      }
       return false;
     }
   }
