@@ -219,7 +219,7 @@ class OcrDraft {
 }
 
 // 사용자의 민감정보 원본 로컬 DB 보관 여부 설정
-final saveOriginalInfoProvider = StateProvider<bool>((ref) => false);
+
 
 // 캐시 및 백그라운드 큐 관리 프로바이더
 final draftCacheProvider = StateProvider<Map<String, OcrDraft>>((ref) => {});
@@ -819,49 +819,31 @@ class HomeScreen extends ConsumerWidget {
         context: context,
         barrierDismissible: false,
         builder: (context) {
-          return StatefulBuilder(
-            builder: (context, setState) {
-              final isSaving = ref.watch(saveOriginalInfoProvider);
-              return AlertDialog(
-                title: const Row(
-                  children: [
-                    Icon(Icons.warning, color: Colors.orange),
-                    SizedBox(width: 8),
-                    Text('개인정보 포함 감지'),
-                  ],
-                ),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('분석할 텍스트 내에 개인정보(주민등록번호, 카드 번호, 바코드 등)로 의심되는 패턴이 감지되었습니다.\n\nAI 분석 서버로 전송하여 자동 구조화 과정을 진행할까요?\n(보안 전송을 위해 민감 데이터는 서버 전송 전 기기 내에서 자동 마스킹 치환됩니다.)'),
-                    const SizedBox(height: 16),
-                    CheckboxListTile(
-                      value: isSaving,
-                      onChanged: (val) {
-                        setState(() {
-                          ref.read(saveOriginalInfoProvider.notifier).state = val ?? false;
-                        });
-                      },
-                      title: const Text('원본 정보 기기 내 안전 보관 허용 (로컬 전용)', style: TextStyle(fontSize: 14)),
-                      controlAffinity: ListTileControlAffinity.leading,
-                      contentPadding: EdgeInsets.zero,
-                      activeColor: Colors.orange,
-                    ),
-                  ],
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('취소', style: TextStyle(color: Colors.grey)),
-                  ),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-                    child: const Text('마스킹 후 전송'),
-                  ),
-                ],
-              );
-            },
+          return AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.warning, color: Colors.orange),
+                SizedBox(width: 8),
+                Text('개인정보 포함 감지'),
+              ],
+            ),
+            content: const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('분석할 텍스트 내에 개인정보(주민등록번호, 카드 번호, 바코드 등)로 의심되는 패턴이 감지되었습니다.\n\nAI 분석 서버로 전송하여 자동 구조화 과정을 진행할까요?\n(보안 전송을 위해 민감 데이터는 서버 전송 전 기기 내에서 안전하게 암호화됩니다.)'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('취소', style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                child: const Text('암호화 후 전송'),
+              ),
+            ],
           );
         },
       ) ?? false;
@@ -869,12 +851,8 @@ class HomeScreen extends ConsumerWidget {
 
     if (!proceed) return;
 
-    // 2. 서버 전송 전 익명화 마스킹 수행 및 원본 추출 (옵션)
-    Map<String, dynamic>? originalInfo;
-    if (ref.read(saveOriginalInfoProvider)) {
-      originalInfo = MaskingHelper.extractOriginalSensitiveInfo(rawText);
-    }
-    
+    // 2. 서버 전송 전 익명화 마스킹(암호화) 수행
+
     final maskedText = MaskingHelper.mask(rawText);
     
     // E2EE 로그 테스트 용도: 서버 전송 전에 어떻게 암호화되었는지 콘솔에 출력
@@ -915,7 +893,6 @@ class HomeScreen extends ConsumerWidget {
     if (cacheMap.containsKey(image.path)) {
       cacheMap[image.path] = cacheMap[image.path]!.copyWith(
         aiStatus: 'loading',
-        originalSensitiveInfo: originalInfo,
       );
       ref.read(draftCacheProvider.notifier).state = cacheMap;
     }
@@ -1636,13 +1613,13 @@ class HomeScreen extends ConsumerWidget {
 
   Map<String, dynamic> _getCategoryStyle(int category, {int subCategory = 0}) {
     if (category == 0 && subCategory == 1) {
-      return {'name': '🎟️ 기프티콘 (GIFTICON)', 'color': SoseangTheme.gifticonDark, 'bgColor': SoseangTheme.gifticonColor, 'icon': Icons.confirmation_number};
+      return {'name': '기프티콘 (GIFTICON)', 'color': SoseangTheme.gifticonDark, 'bgColor': SoseangTheme.gifticonColor, 'icon': Icons.confirmation_number};
     }
     switch (category) {
-      case 0: return {'name': '📅 일반 일정 (SCHEDULE)', 'color': SoseangTheme.scheduleDark, 'bgColor': SoseangTheme.scheduleColor, 'icon': Icons.event_note};
-      case 1: return {'name': '📍 장소 (PLACE)', 'color': SoseangTheme.placeDark, 'bgColor': SoseangTheme.placeColor, 'icon': Icons.place};
-      case 2: return {'name': '🎁 위시리스트 (WISHLIST)', 'color': SoseangTheme.wishDark, 'bgColor': SoseangTheme.wishColor, 'icon': Icons.favorite};
-      default: return {'name': '📝 메모 (MEMO)', 'color': SoseangTheme.memoDark, 'bgColor': SoseangTheme.memoColor, 'icon': Icons.sticky_note_2};
+      case 0: return {'name': '일반 일정 (SCHEDULE)', 'color': SoseangTheme.scheduleDark, 'bgColor': SoseangTheme.scheduleColor, 'icon': Icons.event_note};
+      case 1: return {'name': '장소 (PLACE)', 'color': SoseangTheme.placeDark, 'bgColor': SoseangTheme.placeColor, 'icon': Icons.place};
+      case 2: return {'name': '위시리스트 (WISHLIST)', 'color': SoseangTheme.wishDark, 'bgColor': SoseangTheme.wishColor, 'icon': Icons.favorite};
+      default: return {'name': '메모 (MEMO)', 'color': SoseangTheme.memoDark, 'bgColor': SoseangTheme.memoColor, 'icon': Icons.sticky_note_2};
     }
   }
 
@@ -2682,7 +2659,7 @@ class HomeScreen extends ConsumerWidget {
                                                             }
                                                           },
                                                           decoration: InputDecoration(
-                                                            labelText: '⏰ 시작일 선택',
+                                                            labelText: '시작일 선택',
                                                             border: OutlineInputBorder(
                                                               borderRadius: BorderRadius.circular(10),
                                                               borderSide: isHighlighted ? const BorderSide(color: Colors.redAccent, width: 2) : const BorderSide(),
@@ -2720,7 +2697,7 @@ class HomeScreen extends ConsumerWidget {
                                                             }
                                                           },
                                                           decoration: InputDecoration(
-                                                            labelText: '⏰ 종료일 선택',
+                                                            labelText: '종료일 선택',
                                                             border: OutlineInputBorder(
                                                               borderRadius: BorderRadius.circular(10),
                                                             ),
@@ -2856,7 +2833,7 @@ class HomeScreen extends ConsumerWidget {
                                                  child: ElevatedButton.icon(
                                                    onPressed: () => _saveCurrentCardAndRemoveFromQueue(context, ref),
                                                    icon: const Icon(Icons.save),
-                                                   label: const Text('바로 저장하기'),
+                                                   label: const Text('저장하기'),
                                                    style: ElevatedButton.styleFrom(
                                                      backgroundColor: style['color'],
                                                      foregroundColor: Colors.white,
