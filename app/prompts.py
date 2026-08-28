@@ -322,16 +322,30 @@ TYPE_PROMPTS = {
     "MEMO": MEMO_PROMPT,
 }
 
-def get_system_prompt():
+BULK_INSTRUCTION = """
+---
+⚠️ [다중 입력 처리(Bulk) 안내]
+사용자가 제공하는 입력은 여러 개의 텍스트가 번호([0], [1], ...)와 함께 묶인 형태입니다.
+제공된 모든 텍스트를 각각 독립적으로 분석하여 그 결과를 배열(List)로 반환하세요.
+각 결과 항목의 'index' 필드에는 원본 텍스트에 부여된 번호를 정확히 기재하세요. (누락 금지)
+"""
+
+def get_system_prompt(is_bulk: bool = False):
     """기존 호환용 (1단계 통합 프롬프트)"""
-    return CLASSIFY_PROMPT
+    prompt = CLASSIFY_PROMPT
+    if is_bulk:
+        prompt += BULK_INSTRUCTION
+    return prompt
 
 ENC_RULE = """
 ⚠️ 개인정보 추출 규칙: 텍스트 내에 "[ENC:...]" 형태의 문구가 있다면 이는 주민번호, 전화번호, 카드번호 등 개인정보가 암호화/마스킹된 것입니다. 절대 무시하거나 누락시키지 말고, 본문(body, description 등)에 원문 그대로 또는 적절한 꼬리표(예: "주민번호: [ENC:...]")와 함께 반드시 포함시키세요.
 단, title(제목), name(상호명/이름), product_name(상품명) 등의 대표 '제목/이름' 필드에는 절대 "[ENC:...]" 형태의 문구가 포함되어서는 안 됩니다. 만약 제목에 해당하는 부분이 암호화되어 있다면, 맥락을 파악하여 적절한 일반 명사(예: "개인정보 기록", "카드 정보", "연락처")로 대체해서 제목을 지어주세요.
 """
 
-def get_type_prompt(screenshot_type: str) -> str:
+def get_type_prompt(screenshot_type: str, is_bulk: bool = False) -> str:
     """타입별 상세 추출 프롬프트"""
     base_prompt = TYPE_PROMPTS.get(screenshot_type, MEMO_PROMPT)
-    return base_prompt + ENC_RULE
+    prompt = base_prompt + ENC_RULE
+    if is_bulk:
+        prompt += BULK_INSTRUCTION
+    return prompt

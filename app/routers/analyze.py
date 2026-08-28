@@ -2,7 +2,8 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from app.schemas import (
     AnalyzeRequest, AnalyzeResponse, BatchAnalyzeRequest, BatchAnalyzeResponse,
     BatchAsyncResponse, BatchStatusResponse, ClassifyResponse, BatchClassifyResponse,
-    LLMClassifyResponse, LLMScheduleResponse, LLMPlaceResponse, LLMWishlistResponse, LLMMemoResponse
+    LLMClassifyResponse, LLMScheduleResponse, LLMPlaceResponse, LLMWishlistResponse, LLMMemoResponse,
+    LLMBulkClassifyResponse, LLMBulkScheduleResponse, LLMBulkPlaceResponse, LLMBulkWishlistResponse, LLMBulkMemoResponse
 )
 from app.prompts import get_system_prompt, CLASSIFY_PROMPT, get_type_prompt
 from app.validator import validate_result
@@ -283,44 +284,51 @@ def classify_batch(request: BatchAnalyzeRequest):
     if len(request.items) == 0:
         raise HTTPException(status_code=400, detail="분석할 항목이 없습니다")
 
-    results = []
+    results_map = {}
+    valid_items = []
     
     for idx, item in enumerate(request.items):
-        try:
-            clean_text = item.ocr_text.strip()
-            if len(clean_text) < 3:
-                results.append(ClassifyResponse(
-                    index=idx, type="MEMO", confidence=0.0, reasoning="텍스트가 너무 짧습니다"
-                ))
-                continue
-                
-            if len(clean_text) > 5000:
-                clean_text = clean_text[:5000]
+        clean_text = item.ocr_text.strip()
+        if len(clean_text) < 3:
+            results_map[idx] = ClassifyResponse(
+                index=idx, type="MEMO", confidence=0.0
+            )
+            continue
+        if len(clean_text) > 5000:
+            clean_text = clean_text[:5000]
+        valid_items.append((idx, clean_text))
 
-            classify_result = call_llm_with_limit(
+    if valid_items:
+        bulk_texts = [f"[{idx}]\n{text}" for idx, text in valid_items]
+        bulk_input_str = "\n---\n".join(bulk_texts)
+        
+        try:
+            bulk_result = call_llm_with_limit(
                 call_llm,
-                system_prompt=CLASSIFY_PROMPT,
-                user_text=clean_text,
-                response_format=LLMClassifyResponse
+                system_prompt=get_system_prompt(is_bulk=True),
+                user_text=bulk_input_str,
+                response_format=LLMBulkClassifyResponse
             )
             
-            detected_type = classify_result.get("type", "MEMO")
-            confidence = classify_result.get("confidence", 0.0)
-            reasoning = classify_result.get("reasoning", "이유 없음")
-            
-            results.append(ClassifyResponse(
-                index=idx,
-                type=detected_type,
-                confidence=confidence,
-                reasoning=reasoning
-            ))
+            for res_item in bulk_result.get("results", []):
+                idx = res_item.get("index")
+                if idx is not None:
+                    results_map[idx] = ClassifyResponse(
+                        index=idx,
+                        type=res_item.get("type", "MEMO"),
+                        confidence=res_item.get("confidence", 0.0)
+                    )
         except Exception as e:
-            logger.error(f"[classify_batch] 항목 {idx} 실패: {e}")
-            results.append(ClassifyResponse(
-                index=idx, type="MEMO", confidence=0.0, reasoning=f"분류 에러: {str(e)}"
-            ))
+            logger.error(f"[classify_batch] 벌크 분석 에러: {e}")
+            for idx, _ in valid_items:
+                results_map[idx] = ClassifyResponse(
+                    index=idx, type="MEMO", confidence=0.0
+                )
 
-    return BatchClassifyResponse(total=len(request.items), results=results)
+    # 인덱스 순서대로 조립
+    final_results = [results_map.get(i, ClassifyResponse(index=i, type="MEMO", confidence=0.0)) for i in range(len(request.items))]
+    
+    return BatchClassifyResponse(total=len(request.items), results=final_results)
 
 @router.post("/analyze/batch", response_model=BatchAnalyzeResponse)
 def analyze_batch(request: BatchAnalyzeRequest):
@@ -343,15 +351,157 @@ def analyze_batch(request: BatchAnalyzeRequest):
 
     results = []
     errors = []
-
+    results_map = {}
+    
+    # 1. 1차 그룹화
+    classify_needed = []
+    type_groups = {"SCHEDULE": [], "PLACE": [], "WISHLIST": [], "MEMO": []}
+    
     for idx, item in enumerate(request.items):
+        clean_text = item.ocr_text.strip()
+        if len(clean_text) < 3:
+            errors.append({"index": idx, "error": "텍스트가 너무 짧습니다"})
+            continue
+        if len(clean_text) > 5000:
+            item.ocr_text = clean_text[:5000]
+            
+        if item.type:
+            type_groups[item.type.value].append((idx, item, 1.0)) # (idx, item, classify_confidence)
+        else:
+            classify_needed.append((idx, item))
+            
+    # 2. Bulk Classify
+    if classify_needed:
+        bulk_texts = [f"[{idx}]\n{item.ocr_text}" for idx, item in classify_needed]
+        bulk_input_str = "\n---\n".join(bulk_texts)
         try:
-            logger.info(f"[batch] 항목 {idx+1}/{len(request.items)} 처리 중...")
-            response = analyze_v2(item)
-            results.append(response)
+            bulk_classify_result = call_llm_with_limit(
+                call_llm,
+                system_prompt=get_system_prompt(is_bulk=True),
+                user_text=bulk_input_str,
+                response_format=LLMBulkClassifyResponse
+            )
+            for res_item in bulk_classify_result.get("results", []):
+                idx = res_item.get("index")
+                ctype = res_item.get("type", "MEMO")
+                cconf = res_item.get("confidence", 0.0)
+                
+                original_item = next((it for i, it in classify_needed if i == idx), None)
+                if original_item:
+                    type_groups.setdefault(ctype, []).append((idx, original_item, cconf))
         except Exception as e:
-            logger.error(f"[batch] 항목 {idx} 실패: {e}")
-            errors.append({"index": idx, "error": str(e)})
+            logger.error(f"[bulk_analyze] Bulk classify error: {e}")
+            for idx, item in classify_needed:
+                type_groups["MEMO"].append((idx, item, 0.0))
+                
+    # 3. Bulk Extract per Type
+    schema_map = {
+        "SCHEDULE": LLMBulkScheduleResponse,
+        "PLACE": LLMBulkPlaceResponse,
+        "WISHLIST": LLMBulkWishlistResponse,
+        "MEMO": LLMBulkMemoResponse
+    }
+    
+    for ttype, titems in type_groups.items():
+        if not titems:
+            continue
+            
+        bulk_texts = [f"[{idx}]\n{item.ocr_text}" for idx, item, _ in titems]
+        bulk_input_str = "\n---\n".join(bulk_texts)
+        extract_schema = schema_map.get(ttype, LLMBulkMemoResponse)
+        
+        try:
+            bulk_extract_result = call_llm_with_limit(
+                call_llm,
+                system_prompt=get_type_prompt(ttype, is_bulk=True),
+                user_text=bulk_input_str,
+                response_format=extract_schema
+            )
+            
+            for res_item in bulk_extract_result.get("results", []):
+                idx = res_item.get("index")
+                if idx is None:
+                    continue
+                
+                # find original item & confidence
+                match = next(((item, cconf) for i, item, cconf in titems if i == idx), None)
+                if not match:
+                    continue
+                original_item, classify_confidence = match
+                
+                # Token Masking Structure
+                masked_info_list = []
+                if original_item.masked_tokens:
+                    for token in original_item.masked_tokens:
+                        t_type = _detect_token_type(token)
+                        masked_info_list.append({"original": token, "type": t_type})
+                
+                extracted_fields = _extract_fields(res_item)
+                
+                if ttype != "MEMO" and "items" in extracted_fields and isinstance(extracted_fields["items"], list) and len(extracted_fields["items"]) > 0:
+                    responses = []
+                    for single_item in extracted_fields["items"]:
+                        final = {
+                            "type": ttype,
+                            "confidence": classify_confidence,
+                            "fields": single_item,
+                            "missing_fields": extracted_fields.get("missing_fields", [])
+                        }
+                        final = validate_result(final)
+                        
+                        row_id = save_result(
+                            type=final["type"],
+                            confidence=final.get("confidence", 0),
+                            fields=json.dumps(final.get("fields", {}), ensure_ascii=False),
+                            image_hash=original_item.image_hash,
+                            status=final.get("status", "DRAFT")
+                        )
+                        responses.append(AnalyzeResponse(
+                            id=row_id, type=final["type"], confidence=final.get("confidence", 0),
+                            fields=final.get("fields", {}), missing_fields=final.get("missing_fields", []),
+                            status=final.get("status", "DRAFT"), masked_info=masked_info_list
+                        ))
+                    
+                    if len(responses) == 1:
+                        results_map[idx] = responses[0]
+                    else:
+                        # 다중 항목이면 list로 매핑
+                        results_map[idx] = responses
+                else:
+                    final = {
+                        "type": ttype,
+                        "confidence": classify_confidence,
+                        "fields": extracted_fields.get("items", extracted_fields), # if single dict
+                        "missing_fields": extracted_fields.get("missing_fields", [])
+                    }
+                    if ttype != "MEMO" or not isinstance(final["fields"], list):
+                        final = validate_result(final)
+                        
+                    row_id = save_result(
+                        type=final["type"],
+                        confidence=final.get("confidence", 0),
+                        fields=json.dumps(final.get("fields", {}), ensure_ascii=False),
+                        image_hash=original_item.image_hash,
+                        status=final.get("status", "DRAFT")
+                    )
+                    results_map[idx] = AnalyzeResponse(
+                        id=row_id, type=final["type"], confidence=final.get("confidence", 0),
+                        fields=final.get("fields", {}), missing_fields=final.get("missing_fields", []),
+                        status=final.get("status", "DRAFT"), masked_info=masked_info_list
+                    )
+        except Exception as e:
+            logger.error(f"[bulk_analyze] Bulk extract error for type {ttype}: {e}")
+            for idx, _, _ in titems:
+                errors.append({"index": idx, "error": str(e)})
+                
+    # 순서대로 리스트 조립 (Flatten arrays if multiple items detected)
+    for i in range(len(request.items)):
+        if i in results_map:
+            val = results_map[i]
+            if isinstance(val, list):
+                results.extend(val)
+            else:
+                results.append(val)
 
     return BatchAnalyzeResponse(
         total=len(request.items),
@@ -363,26 +513,19 @@ def analyze_batch(request: BatchAnalyzeRequest):
 
 
 def _process_batch_background(task_id: str, request: BatchAnalyzeRequest):
-    """백그라운드에서 배치 항목을 순차 분석하고 상태를 업데이트하는 워커"""
+    """백그라운드에서 배치 항목을 Bulk 분석하고 상태를 업데이트하는 워커"""
     try:
         _task_store[task_id]["status"] = "PROCESSING"
         
-        for idx, item in enumerate(request.items):
-            # 중간에 상태 확인 (에러 발생 등으로 강제 종료될 경우를 대비)
-            if _task_store[task_id]["status"] == "ERROR":
-                break
-
-            try:
-                logger.info(f"[async_batch] {task_id} - 항목 {idx+1}/{len(request.items)} 처리 중...")
-                response = analyze_v2(item)
-                _task_store[task_id]["results"].append(response)
-                _task_store[task_id]["completed"] += 1
-            except Exception as e:
-                logger.error(f"[async_batch] {task_id} - 항목 {idx} 실패: {e}")
-                _task_store[task_id]["errors"].append({"index": idx, "error": str(e)})
-                _task_store[task_id]["failed"] += 1
+        logger.info(f"[async_batch] {task_id} - Bulk 분석 시작 (총 {len(request.items)}건)")
+        response = analyze_batch(request)
         
+        _task_store[task_id]["results"] = response.results
+        _task_store[task_id]["errors"] = response.errors
+        _task_store[task_id]["completed"] = response.success
+        _task_store[task_id]["failed"] = response.failed
         _task_store[task_id]["status"] = "COMPLETED"
+        logger.info(f"[async_batch] {task_id} - Bulk 분석 완료")
     
     except Exception as e:
         logger.error(f"[async_batch] {task_id} - 전체 프로세스 실패: {e}")
