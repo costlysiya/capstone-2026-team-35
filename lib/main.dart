@@ -4336,7 +4336,7 @@ class DynamicFeaturesCard extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (icon != null) ...[
-                          Icon(icon, size: 14, color: Colors.deepPurple.shade300),
+                          Icon(icon, size: 14, color: categoryColor),
                           const SizedBox(width: 4),
                         ],
                         SizedBox(
@@ -4351,7 +4351,7 @@ class DynamicFeaturesCard extends ConsumerWidget {
                           child: isReadOnly
                             ? Text(
                                 displayValue,
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.deepPurple.shade400),
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: categoryColor),
                               )
                             : TextFormField(
                                 key: ValueKey('${currentIdx}_${entry.key}'),
