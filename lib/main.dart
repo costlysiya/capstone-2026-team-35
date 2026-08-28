@@ -609,6 +609,12 @@ class HomeScreen extends ConsumerWidget {
       ref.read(scheduleDateProvider).text = draft.scheduleDate;
       ref.read(scheduleEndDateProvider).text = draft.scheduleEndDate;
       ref.read(placeLocationProvider).text = draft.placeLocation;
+      
+      if (draft.category == 3 && draft.aiFields != null && draft.aiFields!['sub_type'] != null) {
+        ref.read(memoSubTypeProvider.notifier).state = draft.aiFields!['sub_type'].toString();
+      } else {
+        ref.read(memoSubTypeProvider.notifier).state = 'NOTE';
+      }
       // (Removed aiResponseFieldsProvider assignment)
     }
   }
@@ -1236,7 +1242,7 @@ class HomeScreen extends ConsumerWidget {
           'masked_tokens': <String>[],
         },
         options: Options(contentType: 'application/json'),
-      ).timeout(const Duration(seconds: 15));
+      ).timeout(const Duration(seconds: 30));
       
       if (response.statusCode == 200 && response.data != null) {
         dynamic _decryptJson(dynamic data) {
@@ -1358,6 +1364,11 @@ class HomeScreen extends ConsumerWidget {
           ref.read(scheduleDateProvider).text = newSchedule;
           ref.read(scheduleEndDateProvider).text = newScheduleEnd;
           ref.read(placeLocationProvider).text = newPlace;
+          if (categoryIndex == 3 && aiFieldsToSave['sub_type'] != null) {
+            ref.read(memoSubTypeProvider.notifier).state = aiFieldsToSave['sub_type'].toString();
+          } else if (categoryIndex == 3) {
+            ref.read(memoSubTypeProvider.notifier).state = 'NOTE';
+          }
           if (cacheMap2.containsKey(imagePath)) {
              ref.read(contentControllerProvider).text = cacheMap2[imagePath]!.content;
           }
@@ -1378,9 +1389,43 @@ class HomeScreen extends ConsumerWidget {
     }
   }
 
-  void _startBatchAIAnalysis(WidgetRef ref) {
+  Future<void> _startBatchAIAnalysis(WidgetRef ref) async {
     final selected = ref.read(selectedImagesProvider).toList();
     if (selected.isEmpty) return;
+    
+    // 텍스트 길이에 따라 정렬하기 위해 캐시 가져오기
+    final cache = ref.read(draftCacheProvider);
+    
+    // (이미지 경로, 텍스트 길이) 쌍으로 만들고 길이에 따라 내림차순 정렬
+    final List<MapEntry<String, int>> sortedSelected = selected.map((path) {
+      final textLength = cache[path]?.content.length ?? 0;
+      return MapEntry(path, textLength);
+    }).toList();
+    
+    sortedSelected.sort((a, b) => b.value.compareTo(a.value)); // 긴 글부터 정렬
+    
+    // 투포인터로 가장 긴 것과 가장 짧은 것을 짝지어 2장 단위로 그룹화
+    final List<List<String>> batches = [];
+    int left = 0;
+    int right = sortedSelected.length - 1;
+    
+    while (left <= right) {
+      List<String> batch = [];
+      
+      // 가장 긴 것 2개 추출
+      for (int i = 0; i < 2 && left <= right; i++) {
+        batch.add(sortedSelected[left].key);
+        left++;
+      }
+      
+      // 가장 짧은 것 2개 추출
+      for (int i = 0; i < 2 && left <= right; i++) {
+        batch.add(sortedSelected[right].key);
+        right--;
+      }
+      
+      batches.add(batch);
+    }
     
     // UI 초기화
     ref.read(selectionModeProvider.notifier).state = false;
@@ -1390,13 +1435,15 @@ class HomeScreen extends ConsumerWidget {
     int completed = 0;
     ref.read(serverProgressProvider.notifier).state = '🌐 서버 분석 중 (0/$total)';
 
-    for (final imgPath in selected) {
-      _runBackgroundAIAnalysis(ref, imgPath).then((_) {
+    // 배치(4장) 단위로 병렬 실행하되, 완료되는 순서대로 실시간 카운트 증가
+    for (final batch in batches) {
+      final futures = batch.map((imgPath) async {
+        await _runBackgroundAIAnalysis(ref, imgPath);
+        
         completed++;
         if (completed >= total) {
           ref.read(serverProgressProvider.notifier).state = '✅ 서버 분석 완료 ($total장)';
           Future.delayed(const Duration(seconds: 3), () {
-            // 3초 후 자동으로 숨기기
             if (ref.read(serverProgressProvider).startsWith('✅')) {
               ref.read(serverProgressProvider.notifier).state = '';
             }
@@ -1405,6 +1452,7 @@ class HomeScreen extends ConsumerWidget {
           ref.read(serverProgressProvider.notifier).state = '🌐 서버 분석 중 ($completed/$total)';
         }
       });
+      await Future.wait(futures);
     }
   }
 
