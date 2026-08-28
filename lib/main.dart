@@ -1962,7 +1962,7 @@ class HomeScreen extends ConsumerWidget {
                                                 if (aiFieldCtrls.isNotEmpty) ...[
                                                   Align(
                                                     alignment: Alignment.centerLeft,
-                                                    child: Text('AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: kCategoryStyles[editCatId]?['color'] as Color? ?? SoseangTheme.primary, fontSize: 12)),
+                                                    child: Text('AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: _getCategoryStyle(editCatId)['color'], fontSize: 12)),
                                                   ),
                                                   const SizedBox(height: 5),
                                                   Container(
@@ -4182,8 +4182,17 @@ class DynamicFeaturesCard extends ConsumerWidget {
         .toList();
 
     final categoryIndex = ref.watch(selectedCategoryProvider);
-    final style = kCategoryStyles[categoryIndex] ?? kCategoryStyles[3]!;
-    final categoryColor = style['color'] as Color;
+    final subCategory = ref.watch(selectedSubCategoryProvider);
+    Color categoryColor = SoseangTheme.memoDark;
+    if (categoryIndex == 0 && subCategory == 1) {
+      categoryColor = SoseangTheme.gifticonDark;
+    } else if (categoryIndex == 0) {
+      categoryColor = SoseangTheme.scheduleDark;
+    } else if (categoryIndex == 1) {
+      categoryColor = SoseangTheme.placeDark;
+    } else if (categoryIndex == 2) {
+      categoryColor = SoseangTheme.wishDark;
+    }
 
     return Card(
       elevation: 1,
