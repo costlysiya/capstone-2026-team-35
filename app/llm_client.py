@@ -23,7 +23,7 @@ def _do_call_llm(system_prompt: str, user_text: str, response_format=None) -> di
             ],
             response_format=response_format,
             temperature=LLM_TEMPERATURE,
-            timeout=30
+            timeout=90
         )
         return response.choices[0].message.parsed.model_dump()
     else:
@@ -35,7 +35,7 @@ def _do_call_llm(system_prompt: str, user_text: str, response_format=None) -> di
             ],
             response_format={"type": "json_object"},
             temperature=LLM_TEMPERATURE,
-            timeout=30
+            timeout=90
         )
         return json.loads(response.choices[0].message.content)
 

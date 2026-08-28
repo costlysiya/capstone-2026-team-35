@@ -1,0 +1,152 @@
+[
+  {
+    "id": 1,
+    "description": "스타벅스 기프티콘",
+    "category": "SCHEDULE",
+    "ondevice_accuracy": 0.6666666666666666,
+    "ondevice_time_ms": 0.0,
+    "llm_accuracy": 1.0,
+    "llm_time_ms": 3687.7119541168213,
+    "llm_detected_type": "SCHEDULE"
+  },
+  {
+    "id": 2,
+    "description": "카카오톡 약속 대화",
+    "category": "SCHEDULE",
+    "ondevice_accuracy": 0.25,
+    "ondevice_time_ms": 0.0,
+    "llm_accuracy": 0.75,
+    "llm_time_ms": 2041.773796081543,
+    "llm_detected_type": "SCHEDULE"
+  },
+  {
+    "id": 3,
+    "description": "넷플릭스 구독 결제",
+    "category": "SCHEDULE",
+    "ondevice_accuracy": 0.6666666666666666,
+    "ondevice_time_ms": 0.0,
+    "llm_accuracy": 1.0,
+    "llm_time_ms": 1749.4726181030273,
+    "llm_detected_type": "SCHEDULE"
+  },
+  {
+    "id": 4,
+    "description": "KTX 기차표",
+    "category": "SCHEDULE",
+    "ondevice_accuracy": 0.75,
+    "ondevice_time_ms": 0.0,
+    "llm_accuracy": 0.75,
+    "llm_time_ms": 2548.0613708496094,
+    "llm_detected_type": "SCHEDULE"
+  },
+  {
+    "id": 5,
+    "description": "시험 마감일",
+    "category": "SCHEDULE",
+    "ondevice_accuracy": 0.3333333333333333,
+    "ondevice_time_ms": 0.0,
+    "llm_accuracy": 1.0,
+    "llm_time_ms": 2138.1499767303467,
+    "llm_detected_type": "SCHEDULE"
+  },
+  {
+    "id": 6,
+    "description": "맛집 정보",
+    "category": "PLACE",
+    "ondevice_accuracy": 0.3333333333333333,
+    "ondevice_time_ms": 0.0,
+    "llm_accuracy": 0.6666666666666666,
+    "llm_time_ms": 2874.7165203094482,
+    "llm_detected_type": "PLACE"
+  },
+  {
+    "id": 7,
+    "description": "카페 추천 대화",
+    "category": "PLACE",
+    "ondevice_accuracy": 0.25,
+    "ondevice_time_ms": 0.0,
+    "llm_accuracy": 0.75,
+    "llm_time_ms": 2697.312831878662,
+    "llm_detected_type": "PLACE"
+  },
+  {
+    "id": 8,
+    "description": "네이버 지도 스크린샷",
+    "category": "PLACE",
+    "ondevice_accuracy": 0.3333333333333333,
+    "ondevice_time_ms": 0.0,
+    "llm_accuracy": 1.0,
+    "llm_time_ms": 2701.0536193847656,
+    "llm_detected_type": "PLACE"
+  },
+  {
+    "id": 9,
+    "description": "쿠팡 상품 페이지",
+    "category": "WISHLIST",
+    "ondevice_accuracy": 0.3333333333333333,
+    "ondevice_time_ms": 0.0,
+    "llm_accuracy": 1.0,
+    "llm_time_ms": 2855.175018310547,
+    "llm_detected_type": "WISHLIST"
+  },
+  {
+    "id": 10,
+    "description": "무신사 장바구니",
+    "category": "WISHLIST",
+    "ondevice_accuracy": 0.0,
+    "ondevice_time_ms": 0.0,
+    "llm_accuracy": 1.0,
+    "llm_time_ms": 2314.269542694092,
+    "llm_detected_type": "WISHLIST"
+  },
+  {
+    "id": 11,
+    "description": "요리 레시피",
+    "category": "MEMO",
+    "ondevice_accuracy": 0.5,
+    "ondevice_time_ms": 0.0,
+    "llm_accuracy": 0.5,
+    "llm_time_ms": 3995.73016166687,
+    "llm_detected_type": "MEMO"
+  },
+  {
+    "id": 12,
+    "description": "할 일 체크리스트",
+    "category": "MEMO",
+    "ondevice_accuracy": 0.5,
+    "ondevice_time_ms": 0.0,
+    "llm_accuracy": 0.5,
+    "llm_time_ms": 2683.6633682250977,
+    "llm_detected_type": "MEMO"
+  },
+  {
+    "id": 13,
+    "description": "배달의민족 주문 확인",
+    "category": "SCHEDULE",
+    "ondevice_accuracy": 0.3333333333333333,
+    "ondevice_time_ms": 0.0,
+    "llm_accuracy": 1.0,
+    "llm_time_ms": 2587.3451232910156,
+    "llm_detected_type": "SCHEDULE"
+  },
+  {
+    "id": 14,
+    "description": "여행 숙소 정보",
+    "category": "PLACE",
+    "ondevice_accuracy": 0.0,
+    "ondevice_time_ms": 0.0,
+    "llm_accuracy": 0.6666666666666666,
+    "llm_time_ms": 2408.5590839385986,
+    "llm_detected_type": "PLACE"
+  },
+  {
+    "id": 15,
+    "description": "당근마켓 중고상품",
+    "category": "WISHLIST",
+    "ondevice_accuracy": 0.5,
+    "ondevice_time_ms": 0.0,
+    "llm_accuracy": 1.0,
+    "llm_time_ms": 2640.9456729888916,
+    "llm_detected_type": "WISHLIST"
+  }
+]

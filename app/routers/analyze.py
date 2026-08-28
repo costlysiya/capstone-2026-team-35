@@ -79,31 +79,13 @@ def _detect_token_type(token: str) -> str:
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
-def analyze_screenshot(request: AnalyzeRequest):
-    """Analyze OCR text and extract structured data (v1)."""
+async def analyze_screenshot(request: AnalyzeRequest):
+    """Analyze OCR text and extract structured data (v1). v2로 내부 리다이렉트합니다."""
     try:
-        result = call_llm(
-            system_prompt=get_system_prompt(),
-            user_text=request.ocr_text
-        )
-        result = validate_result(result)
-
-        # DB 저장
-        row_id = save_result(
-            type=result["type"],
-            confidence=result.get("confidence", 0),
-            fields=json.dumps(result.get("fields", {}), ensure_ascii=False)
-        )
-
-        return AnalyzeResponse(
-            id=row_id,
-            type=result["type"],
-            confidence=result.get("confidence", 0),
-            fields=result.get("fields", {}),
-            missing_fields=result.get("missing_fields", []),
-            status=result.get("status", "DRAFT")
-        )
-
+        result = await analyze_v2(request)
+        if isinstance(result, list):
+            return result[0]
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"분석 실패: {str(e)}")
     
