@@ -49,3 +49,7 @@ on_device_ai/src/__pycache__/
 on_device_ai/build/
 /dataset.csv
 soseang.db
+*.pyc
+
+# Secrets
+firebase-key.json

@@ -66,12 +66,12 @@ def save_result(type: str, confidence: float, fields: str, image_hash: str = Non
     conn.close()
     return row_id
 
-# === 푸시 알림 관련 함수 ===
+# Push Notifications
 
 def save_device_token(token: str):
     """기기 토큰 저장 (Upsert)"""
     conn = get_db()
-    # SQLite UPSERT 구문
+    # SQLite UPSERT
     conn.execute("""
         INSERT INTO device_tokens (token) 
         VALUES (?) 
@@ -201,14 +201,14 @@ def search_results(type: str = None, status: str = None, q: str = None, region: 
         query += " AND status = ?"
         params.append(status)
     if region:
-        # JSON 문자열인 fields 안에 "region": "어쩌구" 가 포함되어 있는지 검사 (SQLite 3.38+ 호환)
+        # Search for region inside fields JSON
         query += " AND json_extract(fields, '$.region') LIKE ?"
         params.append(f"%{region}%")
     if category:
         query += " AND json_extract(fields, '$.category') = ?"
         params.append(category)
     if q:
-        # type별로 검색 타겟을 조금 다르게 할 수도 있지만 우선 fields 전체 문자열에서 단순 포함 검색
+        # Global text search across fields JSON
         query += " AND fields LIKE ?"
         params.append(f"%{q}%")
         
@@ -217,7 +217,7 @@ def search_results(type: str = None, status: str = None, q: str = None, region: 
     
     rows = conn.execute(query, tuple(params)).fetchall()
     
-    # 전체 갯수도 같이 가져오기 (앱에서 페이지네이션/무한스크롤 처리용)
+    # Count total for pagination
     count_query = "SELECT COUNT(*) FROM screenshots WHERE 1=1"
     count_params = params[:-2] # limit, offset 제외
     if type:

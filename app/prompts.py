@@ -70,7 +70,6 @@ CLASSIFY_PROMPT = """당신은 스크린샷 OCR 텍스트를 분류하는 전문
 
 포함 예시:
 - 레시피 / 요리법 (재료, 조리 순서)
-- QR코드 번호·바코드 번호 (단순 번호 기록)
 - 웹소설·전자책 발췌 (리디북스, 카카오페이지, 네이버시리즈 등)
 - 체크리스트·투두리스트 (할 일 목록)
 - 뉴스 기사·블로그 글 발췌
@@ -80,7 +79,7 @@ CLASSIFY_PROMPT = """당신은 스크린샷 OCR 텍스트를 분류하는 전문
 - 공지사항·안내문
 - 와이파이 비밀번호, 계좌번호 등 단순 텍스트 기록
 
-키워드 힌트: 재료, 만드는 법, 조리, QR, 바코드, 리디북스, 카카오페이지,
+키워드 힌트: 재료, 만드는 법, 조리, 바코드, 리디북스, 카카오페이지,
              네이버시리즈, 웹소설, 체크리스트, 할 일, TODO, 메모, 참고,
              기록, 출처, 제목, 챕터, 화, 편
 
@@ -92,17 +91,13 @@ CLASSIFY_PROMPT = """당신은 스크린샷 OCR 텍스트를 분류하는 전문
 3. 상품/가격이 핵심이면 → WISHLIST
 4. 그 외 모두 → MEMO
 
-## Few-Shot 예제 (모범 답안)
+## Few-Shot 예제
 - 입력: "토요일 6시에 강남역 11번 출구 고기집 예약했어"
-  응답: {"type": "SCHEDULE", "confidence": 0.9, "reasoning": "장소가 언급되었으나 특정 일시(토요일 6시)의 예약/약속이 핵심임"}
+  응답: {"type": "SCHEDULE", "confidence": 0.9}
 - 입력: "강남역 삼겹살 맛집 정리: 1. 흑돼지대통령 2. 하남돼지집"
-  응답: {"type": "PLACE", "confidence": 0.95, "reasoning": "특정 기한 없이 장소 리스트를 공유 및 기록하려는 목적임"}
+  응답: {"type": "PLACE", "confidence": 0.95}
 - 입력: "이 원피스 진짜 이쁘지 않냐? 39,000원이래"
-  응답: {"type": "WISHLIST", "confidence": 0.85, "reasoning": "특정 상품에 대한 구매 관심 및 가격 정보가 포함됨"}
-
-## 응답 형식
-반드시 아래 JSON 형식으로만 응답하세요:
-{"type": "SCHEDULE|PLACE|WISHLIST|MEMO", "confidence": 0.0~1.0, "reasoning": "한 줄 판단 근거"}
+  응답: {"type": "WISHLIST", "confidence": 0.85}
 """
 
 # ===== 2차: 타입별 상세 추출 프롬프트 =====
@@ -126,15 +121,16 @@ SCHEDULE_PROMPT = """당신은 일정·기한·예약 정보를 정밀하게 추
 - exchange_place: 교환처/사용처/장소
 - participants: 참여자 (대화에서 추출 가능할 경우, 리스트)
 - recurrence: 반복 주기 ("매주", "매월", "매년" 등). 없으면 null
+- cancellation_deadline: 취소/환불 마감일시 (YYYY-MM-DD HH:MM 형식). 없으면 null
 - sub_type: 세부 분류 ("GIFTICON"|"APPOINTMENT"|"TICKET"|"SUBSCRIPTION"|"DEADLINE"|"DELIVERY")
-- description: 기타 보충 정보
 
 ## 날짜 변환 규칙
 - "26.08.15", "26/08/15" → "2026-08-15"
 - "8월 15일" → 현재 연도 기준으로 "YYYY-08-15"
 - "내일", "모레", "다음주 월요일" → 구체적 날짜 변환이 불가하면 원문 그대로 기록
-- "~까지", "유효기간", "만료일" 뒤의 날짜 → expires_at
-- "예약일", "시작일", "출발", "탑승" 뒤의 날짜 → start_at
+- "관람일", "예약일", "시작일", "출발", "탑승" 뒤의 실제 이벤트 날짜 → start_at
+- "~까지", "유효기간", "만료일" (기프티콘, 구독 등 혜택 만료) 뒤의 날짜 → expires_at
+- "취소마감", "환불가능" 뒤의 날짜 → cancellation_deadline (절대 start_at이나 expires_at에 넣지 말 것)
 
 ## 세부 분류(sub_type) 판단
 - 기프티콘/모바일쿠폰 → GIFTICON (reminder_days: [7, 3, 1] 자동 추천)
@@ -155,13 +151,7 @@ SCHEDULE_PROMPT = """당신은 일정·기한·예약 정보를 정밀하게 추
 - 입력: "다음주 목요일 오후 3시 팀 회의"
   응답: {"fields": {"title": "팀 회의", "expires_at": null, "start_at": "다음주 목요일", "start_time": "15:00", "sub_type": "APPOINTMENT"}, "missing_fields": []}
 - 입력: "넷플릭스 프리미엄 결제일 2026.11.01"
-  응답: {"fields": {"title": "넷플릭스 프리미엄", "expires_at": "2026-11-01", "start_at": null, "recurrence": "매월", "sub_type": "SUBSCRIPTION"}, "missing_fields": []}
-
-JSON 형식으로만 응답 (반드시 fields 내부에 필드를 위치시킬 것):
-{"fields": {...}, "missing_fields": [...]}
-
-일정이 **2개 이상**이면 fields를 **반드시 리스트**로 반환:
-{"fields": [{"title": "일정A", "expires_at": "..."}, {"title": "일정B", "expires_at": "..."}], "missing_fields": []}
+  응답: {"fields": [{"title": "넷플릭스 프리미엄", "expires_at": "2026-11-01", "start_at": null, "recurrence": "매월", "sub_type": "SUBSCRIPTION"}], "missing_fields": []}
 """
 
 PLACE_PROMPT = """당신은 장소·지도·위치 정보를 정밀하게 추출하는 AI입니다.
@@ -173,7 +163,7 @@ PLACE_PROMPT = """당신은 장소·지도·위치 정보를 정밀하게 추출
 
 ## 각 장소별 필수 필드 (하나 이상 반드시 추출)
 - name: 상호명 / 장소명 (예: "을지다락", "스타벅스 강남역점")
-- region: 지역 (반드시 다음 목록 중 하나로만 추출: 서울, 부산, 대구, 인천, 광주, 대전, 울산, 경기, 강원, 충청, 전라, 경북, 경남, 제주, 해외. 예: "서울")
+- region: 지역 (예: "서울 을지로", "부산 서면", "제주 애월")
 
 ## 각 장소별 선택 필드
 - category: 카테고리 (아래 목록 중 하나로 정규화)
@@ -203,21 +193,10 @@ PLACE_PROMPT = """당신은 장소·지도·위치 정보를 정밀하게 추출
 - 주소에서 "서울특별시"→"서울", "부산광역시"→"부산" 등 간소화
 
 ## Few-Shot 예제 (모범 답안)
--  요청: [분류=PLACE] 다음 텍스트에서 추출해줘\n\n[런던베이글뮤지엄 도산점] 평점 4.5/5.0 서울 강남구 도산대로\n[카페 노티드 청담] 평점 4.8/5.0 강남구 청담동
-  응답: {"fields": [{"name": "런던베이글뮤지엄 도산점", "region": "서울", "category": "베이커리"}, {"name": "카페 노티드 청담", "region": "서울", "category": "카페"}], "missing_fields": []}
-  요청: [분류=PLACE] 뷰스트(제주 서귀포 카페) - 제주도 서귀포시 안덕면 사계남로 216번길 29
-  응답: {"fields": {"name": "뷰스트", "region": "제주", "category": "카페", "address": "제주도 서귀포시 안덕면 사계남로 216번길 29"}, "missing_fields": []}
-
-## 응답 형식 (매우 중요!)
-반드시 아래 JSON 형식으로만 응답하세요.
-
-장소가 **2개 이상**이면 fields를 **반드시 리스트**로 반환:
-{"fields": [{"name": "A식당", "region": "서울", "address": "..."}, {"name": "B카페", "region": "부산", "address": "..."}], "missing_fields": []}
-
-장소가 **1개**면 단일 객체:
-{"fields": {"name": "A식당", "region": "서울", "address": "..."}, "missing_fields": []}
-
-⚠️ 다시 한번 강조: 텍스트에서 식별 가능한 모든 장소를 빠짐없이 추출하세요. 번호(1. 2. 3. 4.)가 매겨진 장소 리스트라면 전부 포함해야 합니다.
+- 입력: "1. 런던베이글뮤지엄 도산점 (종로구) 2. 카페 노티드 청담 (강남구)"
+  응답: {"fields": [{"name": "런던베이글뮤지엄 도산점", "region": "서울 종로구", "category": "베이커리"}, {"name": "카페 노티드 청담", "region": "서울 강남구", "category": "카페"}], "missing_fields": []}
+- 입력: "제주도 서귀포시 안덕면 사계남로 216번길 29 뷰스트 카페"
+  응답: {"fields": [{"name": "뷰스트", "region": "제주 서귀포", "category": "카페", "address": "제주도 서귀포시 안덕면 사계남로 216번길 29"}], "missing_fields": []}
 """
 
 WISHLIST_PROMPT = """당신은 쇼핑·위시리스트 정보를 정밀하게 추출하는 AI입니다.
@@ -269,18 +248,7 @@ WISHLIST_PROMPT = """당신은 쇼핑·위시리스트 정보를 정밀하게 �
 - 입력: "장바구니 1. 무지 반팔티 ₩15,000  2. 린넨 팬츠 ₩39,900"
   응답: {"fields": [{"product_name": "무지 반팔티", "price_amount": 15000, "category_tag": "의류"}, {"product_name": "린넨 팬츠", "price_amount": 39900, "category_tag": "의류"}], "missing_fields": []}
 - 입력: "나이키 덩크 로우 레트로 블랙 화이트 정가 139,000원 -> 할인가 119,000원"
-  응답: {"fields": {"product_name": "나이키 덩크 로우 레트로 블랙 화이트", "price_amount": 119000, "original_price": 139000, "category_tag": "신발", "color": "블랙, 화이트"}, "missing_fields": []}
-
-## 응답 형식 (매우 중요!)
-반드시 아래 JSON 형식으로만 응답하세요.
-
-상품이 **2개 이상**이면 fields를 **반드시 리스트**로 반환:
-{"fields": [{"product_name": "A상품", "price_amount": 10000}, {"product_name": "B상품", "price_amount": 20000}], "missing_fields": []}
-
-상품이 **1개**면 단일 객체:
-{"fields": {"product_name": "A상품", "price_amount": 10000}, "missing_fields": []}
-
-⚠️ 다시 한번 강조: 장바구니, 찜 목록 등에서 식별 가능한 모든 상품을 빠짐없이 추출하세요.
+  응답: {"fields": [{"product_name": "나이키 덩크 로우 레트로 블랙 화이트", "price_amount": 119000, "original_price": 139000, "category_tag": "신발", "color": "블랙, 화이트"}], "missing_fields": []}
 """
 
 MEMO_PROMPT = """당신은 다양한 텍스트 정보를 구조화하는 AI입니다.
@@ -290,12 +258,11 @@ MEMO_PROMPT = """당신은 다양한 텍스트 정보를 구조화하는 AI입�
 ## 필수 필드
 - body: 핵심 텍스트 내용 (원문을 정리하되, 의미 보존. OCR 오류 자연스럽게 교정)
 - sub_type: 세부 분류 (아래 중 하나를 반드시 판단)
-  "RECIPE" | "QR_CODE" | "NOVEL" | "CHECKLIST" | "ARTICLE" | "NOTE" | "OTHER"
+  "RECIPE" | "NOVEL" | "CHECKLIST" | "ARTICLE" | "NOTE" | "OTHER"
 
 ## 선택 필드
 - title: 제목 (없으면 body 앞부분에서 자동 생성, 최대 30자)
 - source: 출처 (앱 이름, 웹사이트, 뉴스 매체 등)
-- tags: 관련 태그 (리스트, 예: ["건강", "운동", "다이어트"])
 - date: 관련 날짜 (있으면, YYYY-MM-DD 형식)
 - url: 원문 URL (있으면)
 
@@ -307,11 +274,6 @@ MEMO_PROMPT = """당신은 다양한 텍스트 정보를 구조화하는 AI입�
 - steps: 조리 순서 (리스트)
 - servings: 인분 수
 - cook_time: 조리 시간
-
-### QR_CODE (QR코드·바코드·번호 기록)
-- code_value: QR/바코드 번호 또는 텍스트 값
-- code_type: 코드 종류 ("QR"|"BARCODE"|"SERIAL"|"ACCOUNT"|"WIFI"|"OTHER")
-- label: 코드 용도 설명 (예: "와이파이 비밀번호", "주문번호")
 
 ### NOVEL (웹소설·전자책 발췌)
 - book_title: 책/작품 제목
@@ -340,7 +302,7 @@ MEMO_PROMPT = """당신은 다양한 텍스트 정보를 구조화하는 AI입�
 - published_at: 발행일
 
 ### NOTE (강의 노트·필기·기타 메모)
-- (추가 필드 없음, body와 tags로 충분)
+- (추가 필드 없음, body로 충분)
 
 ### OTHER (위에 해당하지 않는 것)
 - (추가 필드 없음)
@@ -350,9 +312,6 @@ MEMO_PROMPT = """당신은 다양한 텍스트 정보를 구조화하는 AI입�
 - OCR 오류(깨진 글자, 오탈자)를 문맥에 맞게 자연스럽게 교정
 - title이 없으면 body 첫 문장에서 핵심 키워드로 20~30자 이내 생성
 - sub_type 판별이 애매하면 "OTHER"로, 확실한 것만 세부 분류
-
-JSON 형식으로만 응답:
-{"fields": {...}, "missing_fields": [...]}
 """
 
 # 프롬프트 매핑
@@ -367,6 +326,12 @@ def get_system_prompt():
     """기존 호환용 (1단계 통합 프롬프트)"""
     return CLASSIFY_PROMPT
 
+ENC_RULE = """
+⚠️ 개인정보 추출 규칙: 텍스트 내에 "[ENC:...]" 형태의 문구가 있다면 이는 주민번호, 전화번호, 카드번호 등 개인정보가 암호화/마스킹된 것입니다. 절대 무시하거나 누락시키지 말고, 본문(body, description 등)에 원문 그대로 또는 적절한 꼬리표(예: "주민번호: [ENC:...]")와 함께 반드시 포함시키세요.
+단, title(제목), name(상호명/이름), product_name(상품명) 등의 대표 '제목/이름' 필드에는 절대 "[ENC:...]" 형태의 문구가 포함되어서는 안 됩니다. 만약 제목에 해당하는 부분이 암호화되어 있다면, 맥락을 파악하여 적절한 일반 명사(예: "개인정보 기록", "카드 정보", "연락처")로 대체해서 제목을 지어주세요.
+"""
+
 def get_type_prompt(screenshot_type: str) -> str:
     """타입별 상세 추출 프롬프트"""
-    return TYPE_PROMPTS.get(screenshot_type, MEMO_PROMPT)
+    base_prompt = TYPE_PROMPTS.get(screenshot_type, MEMO_PROMPT)
+    return base_prompt + ENC_RULE

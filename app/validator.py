@@ -11,12 +11,7 @@ VALID_TYPES = {"SCHEDULE", "PLACE", "WISHLIST", "MEMO"}
 
 
 def _get_validate_targets(fields: dict, result_type: str = "") -> list[dict]:
-    """
-    fields가 단일 항목이면 [fields]로,
-    복수 항목(items 리스트)이면 그 리스트를 반환.
-    → 검증 로직을 단일/복수 구분 없이 동일하게 적용하기 위함.
-    단, MEMO 타입은 체크리스트 items가 분할 대상이 아니므로 항상 단일 취급.
-    """
+    """Return fields as a list for uniform validation."""
     if result_type == "MEMO":
         return [fields]
     if "items" in fields and isinstance(fields["items"], list):
@@ -25,7 +20,7 @@ def _get_validate_targets(fields: dict, result_type: str = "") -> list[dict]:
 
 
 def _validate_single_item(item: dict, result_type: str) -> list[str]:
-    """단일 항목에 대해 필수 필드 검증, 누락된 필드명 리스트를 반환"""
+    """Validate required fields and return missing field names."""
     missing = []
 
     # 공통 필수 필드 검증
@@ -46,10 +41,7 @@ def _validate_single_item(item: dict, result_type: str) -> list[str]:
 
 
 def _enrich_schedule_fields(fields: dict) -> dict:
-    """
-    SCHEDULE 타입의 sub_type에 따라 자동으로 보강 필드를 채움.
-    앱에서 오토필 UI를 그릴 때 사용할 수 있도록.
-    """
+    """Enrich SCHEDULE fields based on sub_type."""
     sub_type = fields.get("sub_type", "OTHER")
 
     # 1) 기프티콘: 사진 유지 + 만료 알림 자동 설정
@@ -101,7 +93,7 @@ def _enrich_schedule_fields(fields: dict) -> dict:
 
 
 def _enrich_place_fields(fields: dict) -> dict:
-    """PLACE 타입 보강 — 지도 연동용 필드"""
+    """Enrich PLACE fields for map integration."""
     fields.setdefault("keep_photo", False)      # 장소는 사진 불필요
     fields.setdefault("map_ready", bool(fields.get("address") or fields.get("region")))
     # category 정규화 (없으면 "기타")
@@ -110,7 +102,7 @@ def _enrich_place_fields(fields: dict) -> dict:
 
 
 def _enrich_wishlist_fields(fields: dict) -> dict:
-    """WISHLIST 타입 보강 — 원본 사진 보관 + 가격 정규화"""
+    """Enrich WISHLIST fields."""
     fields.setdefault("keep_photo", True)       # 상품 원본 이미지 보관
     # 가격 정규화: 문자열이면 숫자만 추출
     price = fields.get("price_amount")
@@ -122,20 +114,18 @@ def _enrich_wishlist_fields(fields: dict) -> dict:
 
 
 def _enrich_memo_fields(fields: dict) -> dict:
-    """MEMO 타입 보강 — 제목 자동 생성 + 사진 삭제 + 체크리스트 키 정규화"""
+    """Enrich MEMO fields."""
     fields.setdefault("keep_photo", False)       # 메모는 사진 삭제
     
     sub_type = fields.get("sub_type", "")
     
-    # ── 1) 서브 타입별 고유 제목은 LLM이 title을 채웠어도 "무조건" 덮어쓰기 ──
+    # Sub-type title overriding
     if sub_type == "NOVEL" and fields.get("book_title"):
         fields["title"] = fields["book_title"]
     elif sub_type == "RECIPE" and fields.get("recipe_name"):
         fields["title"] = fields["recipe_name"]
     elif sub_type == "ARTICLE" and fields.get("headline"):
         fields["title"] = fields["headline"]
-    elif sub_type == "QR_CODE" and fields.get("label"):
-        fields["title"] = fields["label"]
     elif not fields.get("title"):
         # sub_type 매칭이 안 되었고 title도 비어있을 때만 폴백
         if fields.get("book_title"):
@@ -144,13 +134,11 @@ def _enrich_memo_fields(fields: dict) -> dict:
             fields["title"] = fields["recipe_name"]
         elif fields.get("headline"):
             fields["title"] = fields["headline"]
-        elif fields.get("label"):
-            fields["title"] = fields["label"]
         elif fields.get("body"):
             body = fields["body"]
             fields["title"] = body[:30] + ("..." if len(body) > 30 else "")
     
-    # ── 2) CHECKLIST: items → checklist_items 키 변환 (다중 분할 items와 혼동 방지) ──
+    # Rename items to checklist_items to avoid conflicts
     if sub_type == "CHECKLIST" and "items" in fields:
         fields["checklist_items"] = fields.pop("items")
             
@@ -158,21 +146,18 @@ def _enrich_memo_fields(fields: dict) -> dict:
 
 
 def validate_result(result: dict) -> dict:
-    """
-    LLM 응답을 검증하고 부족한 부분을 표시.
-    단일 항목(fields: {...})과 복수 항목(fields: {items: [...]}) 모두 지원.
-    """
-    # 1) 타입 검증
+    """Validate LLM response and mark missing fields."""
+    # Type validation
     result_type = result.get("type", "")
     if result_type not in VALID_TYPES:
         result["type"] = "MEMO"  # 기본값으로 폴백
 
-    # 2) 신뢰도 검증
+    # Confidence validation
     confidence = result.get("confidence", 0)
     if not (0 <= confidence <= 1):
         result["confidence"] = max(0, min(1, confidence))
 
-    # 3) 필수 필드 검증 — 단일/복수 항목 모두 처리
+    # Required field validation
     fields = result.get("fields", {})
     targets = _get_validate_targets(fields, result_type=result["type"])
 
@@ -188,7 +173,7 @@ def validate_result(result: dict) -> dict:
 
     result["missing_fields"] = all_missing
 
-    # 3.5) 타입별 보강 필드 자동 채움
+    # Enrich fields based on type
     rtype = result["type"]
     for item in targets:
         if rtype == "SCHEDULE":
@@ -200,23 +185,20 @@ def validate_result(result: dict) -> dict:
         elif rtype == "MEMO":
             _enrich_memo_fields(item)
 
-    # 4) 상태 결정
+    # Determine status
     if all_missing:
-        result["status"] = "NEEDS_EDIT"      # 수정 필요
+        result["status"] = "NEEDS_EDIT"
     elif confidence < 0.7:
-        result["status"] = "LOW_CONFIDENCE"  # 신뢰도 낮음
+        result["status"] = "LOW_CONFIDENCE"
     else:
-        result["status"] = "DRAFT"           # 정상 초안
+        result["status"] = "DRAFT"
 
     return result
 
 
 def revalidate_after_edit(result: dict, edited_fields: dict) -> dict:
-    """
-    사용자가 수정한 필드를 반영하고 다시 검증.
-    수정 후에는 누락 필드가 채워졌을 수 있으므로 상태를 재판단.
-    """
-    # 기존 필드에 수정 사항 병합
+    """Merge user edits and revalidate."""
+    # Merge updates
     current_fields = result.get("fields", {})
 
     if "items" in current_fields and isinstance(current_fields["items"], list):
@@ -233,5 +215,4 @@ def revalidate_after_edit(result: dict, edited_fields: dict) -> dict:
 
     result["fields"] = current_fields
 
-    # 재검증
     return validate_result(result)

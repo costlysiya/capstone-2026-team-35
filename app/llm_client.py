@@ -13,28 +13,38 @@ client = OpenAI()
     stop=stop_after_attempt(3),
     before_sleep=before_sleep_log(logger, logging.WARNING)
 )
-def _do_call_llm(system_prompt: str, user_text: str) -> dict:
-    response = client.chat.completions.create(
-        model=OPENAI_MODEL,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_text}
-        ],
-        response_format={"type": "json_object"},
-        temperature=LLM_TEMPERATURE,
-        timeout=30
-    )
-    result = json.loads(response.choices[0].message.content)
-    return result
+def _do_call_llm(system_prompt: str, user_text: str, response_format=None) -> dict:
+    if response_format:
+        response = client.beta.chat.completions.parse(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text}
+            ],
+            response_format=response_format,
+            temperature=LLM_TEMPERATURE,
+            timeout=30
+        )
+        return response.choices[0].message.parsed.model_dump()
+    else:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text}
+            ],
+            response_format={"type": "json_object"},
+            temperature=LLM_TEMPERATURE,
+            timeout=30
+        )
+        return json.loads(response.choices[0].message.content)
 
-def call_llm(system_prompt: str, user_text: str, max_retries: int = 3) -> dict:
+def call_llm(system_prompt: str, user_text: str, max_retries: int = 3, response_format=None) -> dict:
     """
-    LLM을 안전하게 호출하는 함수 (Tenacity 적용)
-    - 실패 시 지수적 백오프(Exponential Backoff)로 최대 3번 재시도
-    - 최종 실패 시 에러 딕셔너리 반환
+    Call LLM safely with Exponential Backoff (Tenacity).
     """
     try:
-        return _do_call_llm(system_prompt, user_text)
+        return _do_call_llm(system_prompt, user_text, response_format)
     except RetryError as e:
         last_error = e.last_attempt.exception()
         logger.error(f"LLM 호출 최종 실패 (재시도 초과): {last_error}")
