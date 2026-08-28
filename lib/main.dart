@@ -1864,11 +1864,11 @@ class HomeScreen extends ConsumerWidget {
                         const SizedBox(height: 15),
                       ],
                       if (card['categoryId'] == 3 && card['rawFields'] != null) ...[
-                        const Text('AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple, fontSize: 12)),
+                        Text('AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: cardStyle['color'], fontSize: 12)),
                         const SizedBox(height: 5),
                         MemoDynamicUIWidget(fields: Map<String, dynamic>.from(card['rawFields'])),
                       ] else if (_hasValidAiFields(card['rawFields'])) ...[
-                        const Text('AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple, fontSize: 12)),
+                        Text('AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: cardStyle['color'], fontSize: 12)),
                         const SizedBox(height: 5),
                         _buildSavedAiFields(card['rawFields']),
                       ] else ...[
@@ -1960,9 +1960,9 @@ class HomeScreen extends ConsumerWidget {
                                                   TextField(controller: extraCtrl, decoration: const InputDecoration(labelText: '추가 정보')),
                                                 const SizedBox(height: 10),
                                                 if (aiFieldCtrls.isNotEmpty) ...[
-                                                  const Align(
+                                                  Align(
                                                     alignment: Alignment.centerLeft,
-                                                    child: Text('AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple, fontSize: 12)),
+                                                    child: Text('AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, color: kCategoryStyles[editCatId]?['color'] as Color? ?? SoseangTheme.primary, fontSize: 12)),
                                                   ),
                                                   const SizedBox(height: 5),
                                                   Container(
@@ -4181,6 +4181,10 @@ class DynamicFeaturesCard extends ConsumerWidget {
         .where((entry) => !excludeKeys.contains(entry.key) && fieldLabels.containsKey(entry.key) && entry.value != null && entry.value.toString().trim().isNotEmpty)
         .toList();
 
+    final categoryIndex = ref.watch(selectedCategoryProvider);
+    final style = kCategoryStyles[categoryIndex] ?? kCategoryStyles[3]!;
+    final categoryColor = style['color'] as Color;
+
     return Card(
       elevation: 1,
       margin: const EdgeInsets.symmetric(vertical: 10),
@@ -4193,18 +4197,18 @@ class DynamicFeaturesCard extends ConsumerWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Row(
+                Row(
                   children: [
-                    Icon(Icons.auto_awesome, color: Colors.deepPurple, size: 16),
-                    SizedBox(width: 6),
-                    Text('AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.deepPurple)),
+                    Icon(Icons.auto_awesome, color: categoryColor, size: 16),
+                    const SizedBox(width: 6),
+                    Text('AI 추출 상세 정보', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: categoryColor)),
                   ],
                 ),
                 if (hasItems)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(color: Colors.deepPurple.shade50, borderRadius: BorderRadius.circular(12)),
-                    child: Text('총 ${items.length}개 항목', style: const TextStyle(fontSize: 10, color: Colors.deepPurple, fontWeight: FontWeight.bold)),
+                    decoration: BoxDecoration(color: categoryColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+                    child: Text('총 ${items.length}개 항목', style: TextStyle(fontSize: 10, color: categoryColor, fontWeight: FontWeight.bold)),
                   ),
               ],
             ),
