@@ -1,4 +1,4 @@
-plugins {
+﻿plugins {
     id("com.android.application")
     // START: FlutterFire Configuration
     id("com.google.gms.google-services")
@@ -20,7 +20,7 @@ android {
     defaultConfig {
         applicationId = "com.example.soseang_app"
         
-        // 1. ??최소 SDK 버전??26?�로 ?�립?�다 (ML Kit ?�구?�항)
+        // 1. ✨ 최소 SDK 버전을 26으로 올립니다 (ML Kit 요구사항)
         minSdk = 26
         
         targetSdk = flutter.targetSdkVersion
@@ -47,7 +47,7 @@ flutter {
     source = "../.."
 }
 
-// 2. ???�일 �?밑에 ??방을 ?�째�??�로 만들??줍니?? (Kotlin DSL 문법 ?�용)
+// 2. ✨ 파일 맨 밑에 이 방을 통째로 새로 만들어 줍니다! (Kotlin DSL 문법 적용)
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     implementation("com.google.mlkit:text-recognition-korean:16.0.0")
