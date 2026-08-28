@@ -1,7 +1,8 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from app.schemas import (
     AnalyzeRequest, AnalyzeResponse, BatchAnalyzeRequest, BatchAnalyzeResponse,
-    BatchAsyncResponse, BatchStatusResponse, ClassifyResponse, BatchClassifyResponse
+    BatchAsyncResponse, BatchStatusResponse, ClassifyResponse, BatchClassifyResponse,
+    LLMClassifyResponse, LLMScheduleResponse, LLMPlaceResponse, LLMWishlistResponse, LLMMemoResponse
 )
 from app.prompts import get_system_prompt, CLASSIFY_PROMPT, get_type_prompt
 from app.validator import validate_result
@@ -161,17 +162,27 @@ async def analyze_v2(request: AnalyzeRequest):
         classify_result = call_llm_with_limit(
             call_llm,
             system_prompt=CLASSIFY_PROMPT,
-            user_text=request.ocr_text
+            user_text=request.ocr_text,
+            response_format=LLMClassifyResponse
         )
         detected_type = classify_result.get("type", "MEMO")
         classify_confidence = classify_result.get("confidence", 0)
         logger.info(f"[v2] LLM 분류: {detected_type} (신뢰도: {classify_confidence}) (전체응답: {classify_result})")
     
+    schema_map = {
+        "SCHEDULE": LLMScheduleResponse,
+        "PLACE": LLMPlaceResponse,
+        "WISHLIST": LLMWishlistResponse,
+        "MEMO": LLMMemoResponse
+    }
+    extract_schema = schema_map.get(detected_type, LLMMemoResponse)
+
     # === 2단계: 타입별 상세 추출 ===
     extract_result = call_llm_with_limit(
         call_llm,
         system_prompt=get_type_prompt(detected_type),
-        user_text=request.ocr_text
+        user_text=request.ocr_text,
+        response_format=extract_schema
     )
     
     # 🔍 디버깅: GPT가 실제로 뭘 반환했는지 로그로 확인
@@ -289,7 +300,8 @@ def classify_batch(request: BatchAnalyzeRequest):
             classify_result = call_llm_with_limit(
                 call_llm,
                 system_prompt=CLASSIFY_PROMPT,
-                user_text=clean_text
+                user_text=clean_text,
+                response_format=LLMClassifyResponse
             )
             
             detected_type = classify_result.get("type", "MEMO")

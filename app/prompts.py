@@ -91,17 +91,13 @@ CLASSIFY_PROMPT = """당신은 스크린샷 OCR 텍스트를 분류하는 전문
 3. 상품/가격이 핵심이면 → WISHLIST
 4. 그 외 모두 → MEMO
 
-## Few-Shot 예제 (모범 답안)
+## Few-Shot 예제
 - 입력: "토요일 6시에 강남역 11번 출구 고기집 예약했어"
-  응답: {"type": "SCHEDULE", "confidence": 0.9, "reasoning": "장소가 언급되었으나 특정 일시(토요일 6시)의 예약/약속이 핵심임"}
+  응답: {"type": "SCHEDULE", "confidence": 0.9}
 - 입력: "강남역 삼겹살 맛집 정리: 1. 흑돼지대통령 2. 하남돼지집"
-  응답: {"type": "PLACE", "confidence": 0.95, "reasoning": "특정 기한 없이 장소 리스트를 공유 및 기록하려는 목적임"}
+  응답: {"type": "PLACE", "confidence": 0.95}
 - 입력: "이 원피스 진짜 이쁘지 않냐? 39,000원이래"
-  응답: {"type": "WISHLIST", "confidence": 0.85, "reasoning": "특정 상품에 대한 구매 관심 및 가격 정보가 포함됨"}
-
-## 응답 형식
-반드시 아래 JSON 형식으로만 응답하세요:
-{"type": "SCHEDULE|PLACE|WISHLIST|MEMO", "confidence": 0.0~1.0, "reasoning": "한 줄 판단 근거"}
+  응답: {"type": "WISHLIST", "confidence": 0.85}
 """
 
 # ===== 2차: 타입별 상세 추출 프롬프트 =====
@@ -127,7 +123,6 @@ SCHEDULE_PROMPT = """당신은 일정·기한·예약 정보를 정밀하게 추
 - recurrence: 반복 주기 ("매주", "매월", "매년" 등). 없으면 null
 - cancellation_deadline: 취소/환불 마감일시 (YYYY-MM-DD HH:MM 형식). 없으면 null
 - sub_type: 세부 분류 ("GIFTICON"|"APPOINTMENT"|"TICKET"|"SUBSCRIPTION"|"DEADLINE"|"DELIVERY")
-- description: 기타 보충 정보
 
 ## 날짜 변환 규칙
 - "26.08.15", "26/08/15" → "2026-08-15"
@@ -156,13 +151,7 @@ SCHEDULE_PROMPT = """당신은 일정·기한·예약 정보를 정밀하게 추
 - 입력: "다음주 목요일 오후 3시 팀 회의"
   응답: {"fields": {"title": "팀 회의", "expires_at": null, "start_at": "다음주 목요일", "start_time": "15:00", "sub_type": "APPOINTMENT"}, "missing_fields": []}
 - 입력: "넷플릭스 프리미엄 결제일 2026.11.01"
-  응답: {"fields": {"title": "넷플릭스 프리미엄", "expires_at": "2026-11-01", "start_at": null, "recurrence": "매월", "sub_type": "SUBSCRIPTION"}, "missing_fields": []}
-
-JSON 형식으로만 응답 (반드시 fields 내부에 필드를 위치시킬 것):
-{"fields": {...}, "missing_fields": [...]}
-
-일정이 **2개 이상**이면 fields를 **반드시 리스트**로 반환:
-{"fields": [{"title": "일정A", "expires_at": "..."}, {"title": "일정B", "expires_at": "..."}], "missing_fields": []}
+  응답: {"fields": [{"title": "넷플릭스 프리미엄", "expires_at": "2026-11-01", "start_at": null, "recurrence": "매월", "sub_type": "SUBSCRIPTION"}], "missing_fields": []}
 """
 
 PLACE_PROMPT = """당신은 장소·지도·위치 정보를 정밀하게 추출하는 AI입니다.
@@ -207,18 +196,7 @@ PLACE_PROMPT = """당신은 장소·지도·위치 정보를 정밀하게 추출
 - 입력: "1. 런던베이글뮤지엄 도산점 (종로구) 2. 카페 노티드 청담 (강남구)"
   응답: {"fields": [{"name": "런던베이글뮤지엄 도산점", "region": "서울 종로구", "category": "베이커리"}, {"name": "카페 노티드 청담", "region": "서울 강남구", "category": "카페"}], "missing_fields": []}
 - 입력: "제주도 서귀포시 안덕면 사계남로 216번길 29 뷰스트 카페"
-  응답: {"fields": {"name": "뷰스트", "region": "제주 서귀포", "category": "카페", "address": "제주도 서귀포시 안덕면 사계남로 216번길 29"}, "missing_fields": []}
-
-## 응답 형식 (매우 중요!)
-반드시 아래 JSON 형식으로만 응답하세요.
-
-장소가 **2개 이상**이면 fields를 **반드시 리스트**로 반환:
-{"fields": [{"name": "A식당", "region": "서울", "address": "..."}, {"name": "B카페", "region": "부산", "address": "..."}], "missing_fields": []}
-
-장소가 **1개**면 단일 객체:
-{"fields": {"name": "A식당", "region": "서울", "address": "..."}, "missing_fields": []}
-
-⚠️ 다시 한번 강조: 텍스트에서 식별 가능한 모든 장소를 빠짐없이 추출하세요. 번호(1. 2. 3. 4.)가 매겨진 장소 리스트라면 전부 포함해야 합니다.
+  응답: {"fields": [{"name": "뷰스트", "region": "제주 서귀포", "category": "카페", "address": "제주도 서귀포시 안덕면 사계남로 216번길 29"}], "missing_fields": []}
 """
 
 WISHLIST_PROMPT = """당신은 쇼핑·위시리스트 정보를 정밀하게 추출하는 AI입니다.
@@ -270,18 +248,7 @@ WISHLIST_PROMPT = """당신은 쇼핑·위시리스트 정보를 정밀하게 �
 - 입력: "장바구니 1. 무지 반팔티 ₩15,000  2. 린넨 팬츠 ₩39,900"
   응답: {"fields": [{"product_name": "무지 반팔티", "price_amount": 15000, "category_tag": "의류"}, {"product_name": "린넨 팬츠", "price_amount": 39900, "category_tag": "의류"}], "missing_fields": []}
 - 입력: "나이키 덩크 로우 레트로 블랙 화이트 정가 139,000원 -> 할인가 119,000원"
-  응답: {"fields": {"product_name": "나이키 덩크 로우 레트로 블랙 화이트", "price_amount": 119000, "original_price": 139000, "category_tag": "신발", "color": "블랙, 화이트"}, "missing_fields": []}
-
-## 응답 형식 (매우 중요!)
-반드시 아래 JSON 형식으로만 응답하세요.
-
-상품이 **2개 이상**이면 fields를 **반드시 리스트**로 반환:
-{"fields": [{"product_name": "A상품", "price_amount": 10000}, {"product_name": "B상품", "price_amount": 20000}], "missing_fields": []}
-
-상품이 **1개**면 단일 객체:
-{"fields": {"product_name": "A상품", "price_amount": 10000}, "missing_fields": []}
-
-⚠️ 다시 한번 강조: 장바구니, 찜 목록 등에서 식별 가능한 모든 상품을 빠짐없이 추출하세요.
+  응답: {"fields": [{"product_name": "나이키 덩크 로우 레트로 블랙 화이트", "price_amount": 119000, "original_price": 139000, "category_tag": "신발", "color": "블랙, 화이트"}], "missing_fields": []}
 """
 
 MEMO_PROMPT = """당신은 다양한 텍스트 정보를 구조화하는 AI입니다.
@@ -346,9 +313,6 @@ MEMO_PROMPT = """당신은 다양한 텍스트 정보를 구조화하는 AI입�
 - OCR 오류(깨진 글자, 오탈자)를 문맥에 맞게 자연스럽게 교정
 - title이 없으면 body 첫 문장에서 핵심 키워드로 20~30자 이내 생성
 - sub_type 판별이 애매하면 "OTHER"로, 확실한 것만 세부 분류
-
-JSON 형식으로만 응답:
-{"fields": {...}, "missing_fields": [...]}
 """
 
 # 프롬프트 매핑
