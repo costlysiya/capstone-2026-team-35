@@ -26,9 +26,17 @@ def init_db():
         )
     """)
     # 해시 인덱스 (캐시 조회 속도 향상)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_image_hash ON screenshots(image_hash)
-    """)
+    try:
+        conn.execute("ALTER TABLE screenshots ADD COLUMN image_hash TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_image_hash ON screenshots(image_hash)
+        """)
+    except sqlite3.OperationalError:
+        pass
     
     # 기기 토큰 저장소
     conn.execute("""

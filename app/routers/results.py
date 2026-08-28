@@ -15,11 +15,11 @@ router = APIRouter(prefix="/api/results", tags=["결과"])
 
 @router.get("")
 def list_results(
-    type: str | None = Query(None, description="타입 필터 (SCHEDULE, PLACE, WISHLIST, MEMO)"),
-    status: str | None = Query(None, description="상태 필터 (DRAFT, CONFIRMED, NEEDS_EDIT)"),
-    q: str | None = Query(None, description="통합 검색어 (fields 내 텍스트 검색)"),
-    region: str | None = Query(None, description="지역 필터 (PLACE 전용, 예: '서울')"),
-    category: str | None = Query(None, description="카테고리 필터 (PLACE 전용, 예: '카페')"),
+    type: Optional[str] = Query(None, description="타입 필터 (SCHEDULE, PLACE, WISHLIST, MEMO)"),
+    status: Optional[str] = Query(None, description="상태 필터 (DRAFT, CONFIRMED, NEEDS_EDIT)"),
+    q: Optional[str] = Query(None, description="통합 검색어 (fields 내 텍스트 검색)"),
+    region: Optional[str] = Query(None, description="지역 필터 (PLACE 전용, 예: '서울')"),
+    category: Optional[str] = Query(None, description="카테고리 필터 (PLACE 전용, 예: '카페')"),
     page: int = Query(1, description="페이지 번호 (1부터 시작)", ge=1),
     limit: int = Query(20, description="페이지 당 항목 수", ge=1, le=100)
 ):
