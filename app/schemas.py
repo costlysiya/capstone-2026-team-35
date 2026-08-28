@@ -170,7 +170,6 @@ class LLMMemoItem(BaseModel):
     sub_type: str = Field(description="RECIPE, NOVEL, CHECKLIST, ARTICLE, NOTE, OTHER 중 하나")
     title: str | None = Field(None, description="제목")
     source: str | None = Field(None, description="출처")
-    tags: list[str] | None = Field(None, description="태그 리스트")
     date: str | None = Field(None, description="날짜 YYYY-MM-DD")
     url: str | None = Field(None, description="URL")
     
