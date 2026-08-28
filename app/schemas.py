@@ -197,3 +197,44 @@ class LLMMemoItem(BaseModel):
 class LLMMemoResponse(BaseModel):
     fields: list[LLMMemoItem]
     missing_fields: list[str]
+
+# === Bulk Processing Schemas ===
+class LLMBulkClassifyItem(BaseModel):
+    index: int = Field(description="제공된 텍스트의 인덱스 번호")
+    type: str = Field(description="SCHEDULE, PLACE, WISHLIST, MEMO 중 하나")
+    confidence: float = Field(description="분류 신뢰도 0.0~1.0")
+
+class LLMBulkClassifyResponse(BaseModel):
+    results: list[LLMBulkClassifyItem]
+
+class LLMBulkScheduleItemResponse(BaseModel):
+    index: int = Field(description="제공된 텍스트의 인덱스 번호")
+    fields: list[LLMScheduleItem]
+    missing_fields: list[str]
+
+class LLMBulkScheduleResponse(BaseModel):
+    results: list[LLMBulkScheduleItemResponse]
+
+class LLMBulkPlaceItemResponse(BaseModel):
+    index: int = Field(description="제공된 텍스트의 인덱스 번호")
+    fields: list[LLMPlaceItem]
+    missing_fields: list[str]
+
+class LLMBulkPlaceResponse(BaseModel):
+    results: list[LLMBulkPlaceItemResponse]
+
+class LLMBulkWishlistItemResponse(BaseModel):
+    index: int = Field(description="제공된 텍스트의 인덱스 번호")
+    fields: list[LLMWishlistItem]
+    missing_fields: list[str]
+
+class LLMBulkWishlistResponse(BaseModel):
+    results: list[LLMBulkWishlistItemResponse]
+
+class LLMBulkMemoItemResponse(BaseModel):
+    index: int = Field(description="제공된 텍스트의 인덱스 번호")
+    fields: list[LLMMemoItem]
+    missing_fields: list[str]
+
+class LLMBulkMemoResponse(BaseModel):
+    results: list[LLMBulkMemoItemResponse]
