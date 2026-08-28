@@ -32,7 +32,7 @@ class ClassifyResponse(BaseModel):
     index: int
     type: str
     confidence: float
-    reasoning: str
+    reasoning: str = ""
 
 class AnalyzeResponse(BaseModel):
     """서버 → 앱 응답"""

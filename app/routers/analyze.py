@@ -79,10 +79,10 @@ def _detect_token_type(token: str) -> str:
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
-async def analyze_screenshot(request: AnalyzeRequest):
+def analyze_screenshot(request: AnalyzeRequest):
     """Analyze OCR text and extract structured data (v1). v2로 내부 리다이렉트합니다."""
     try:
-        result = await analyze_v2(request)
+        result = analyze_v2(request)
         if isinstance(result, list):
             return result[0]
         return result
@@ -90,7 +90,7 @@ async def analyze_screenshot(request: AnalyzeRequest):
         raise HTTPException(status_code=500, detail=f"분석 실패: {str(e)}")
     
 @router.post("/analyze/v2", response_model=Union[AnalyzeResponse, List[AnalyzeResponse]])
-async def analyze_v2(request: AnalyzeRequest):
+def analyze_v2(request: AnalyzeRequest):
     """Two-stage analysis: Classify -> Detail Extraction."""
     
     # Log incoming request
