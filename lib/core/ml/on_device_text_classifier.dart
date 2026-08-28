@@ -44,14 +44,29 @@ class OnDeviceTextClassifier {
                         .trim()
                         .toLowerCase();
     
-    // 나. 어절 단위 토큰화
+    // 나. 공백 기준 분리 후 단어별 Character N-gram (char_wb 방식) 추출
     final tokens = cleaned.split(' ');
     
-    // 다. 단어 빈도(TF) 딕셔너리 구축
+    // 다. 단어 빈도(TF) 딕셔너리 구축 (Bi-gram, Tri-gram)
     final tfMap = <String, int>{};
-    for (var token in tokens) {
-      if (_vocab!.containsKey(token)) {
-        tfMap[token] = (tfMap[token] ?? 0) + 1;
+    for (var word in tokens) {
+      if (word.isEmpty) continue;
+      final padded = ' $word '; // char_wb 는 단어 경계를 공백으로 패딩함
+      
+      // 2-grams
+      for (int i = 0; i < padded.length - 1; i++) {
+        final ngram = padded.substring(i, i + 2);
+        if (_vocab!.containsKey(ngram)) {
+          tfMap[ngram] = (tfMap[ngram] ?? 0) + 1;
+        }
+      }
+      
+      // 3-grams
+      for (int i = 0; i < padded.length - 2; i++) {
+        final ngram = padded.substring(i, i + 3);
+        if (_vocab!.containsKey(ngram)) {
+          tfMap[ngram] = (tfMap[ngram] ?? 0) + 1;
+        }
       }
     }
     
