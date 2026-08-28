@@ -1,3 +1,5 @@
+from __future__ import annotations
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 from enum import Enum
 
@@ -11,9 +13,9 @@ class ScreenshotType(str, Enum):
 class AnalyzeRequest(BaseModel):
     """앱 → 서버 요청"""
     ocr_text: str
-    type: ScreenshotType | None = None  # 앱에서 로컬 분류한 타입 (없으면 서버가 LLM으로 분류)
+    type: Optional[ScreenshotType] = None  # 앱에서 로컬 분류한 타입 (없으면 서버가 LLM으로 분류)
     masked_tokens: list[str] = []
-    image_hash: str | None = None  # 이미지 SHA-256 해시 (중복 분석 방지용)
+    image_hash: Optional[str] = None  # 이미지 SHA-256 해시 (중복 분석 방지용)
 
     class Config:
         json_schema_extra = {
@@ -34,7 +36,8 @@ class ClassifyResponse(BaseModel):
 
 class AnalyzeResponse(BaseModel):
     """서버 → 앱 응답"""
-    id: int | None = None
+    id: Optional[int] = None
+    original_index: Optional[int] = None  # 배치 분석 시 원본 요청 배열의 인덱스
     type: ScreenshotType
     confidence: float
     fields: dict
@@ -44,7 +47,7 @@ class AnalyzeResponse(BaseModel):
 
 class ResultConfirmRequest(BaseModel):
     """사용자 승인 요청"""
-    edited_fields: dict | None = None  # 수정된 필드 (있으면)
+    edited_fields: Optional[dict] = None  # 수정된 필드 (있으면)
 
 class ResultDetailResponse(BaseModel):
     """단건 결과 상세 응답"""
@@ -53,9 +56,9 @@ class ResultDetailResponse(BaseModel):
     confidence: float
     fields: dict
     status: str
-    created_at: str | None = None
-    updated_at: str | None = None
-    ical_string: str | None = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    ical_string: Optional[str] = None
 
 class BatchAnalyzeRequest(BaseModel):
     """배치 분석 요청 — 복수 이미지를 한 번에"""
@@ -106,7 +109,7 @@ class NotificationResponse(BaseModel):
     id: int
     title: str
     body: str
-    result_id: int | None
+    result_id: Optional[int]
     is_read: bool
     created_at: str
 
@@ -119,16 +122,16 @@ class LLMClassifyResponse(BaseModel):
 
 class LLMScheduleItem(BaseModel):
     title: str = Field(description="일정/기프티콘/예약 이름")
-    expires_at: str | None = Field(None, description="만료일/종료일 YYYY-MM-DD")
-    start_at: str | None = Field(None, description="시작일/예약일/출발일 YYYY-MM-DD")
-    start_time: str | None = Field(None, description="시작 시각 HH:MM")
-    end_time: str | None = Field(None, description="종료 시각 HH:MM")
-    reminder_days: list[int] | None = Field(None, description="알림 추천 일수 리스트")
-    exchange_place: str | None = Field(None, description="교환처/장소")
-    participants: list[str] | None = Field(None, description="참여자")
-    recurrence: str | None = Field(None, description="반복 주기")
-    cancellation_deadline: str | None = Field(None, description="취소/환불 마감일시 YYYY-MM-DD HH:MM")
-    sub_type: str | None = Field(None, description="GIFTICON, APPOINTMENT, TICKET, SUBSCRIPTION, DEADLINE, DELIVERY 중 하나")
+    expires_at: Optional[str] = Field(None, description="만료일/종료일 YYYY-MM-DD")
+    start_at: Optional[str] = Field(None, description="시작일/예약일/출발일 YYYY-MM-DD")
+    start_time: Optional[str] = Field(None, description="시작 시각 HH:MM")
+    end_time: Optional[str] = Field(None, description="종료 시각 HH:MM")
+    reminder_days: Optional[list[int]] = Field(None, description="알림 추천 일수 리스트")
+    exchange_place: Optional[str] = Field(None, description="교환처/장소")
+    participants: Optional[list[str]] = Field(None, description="참여자")
+    recurrence: Optional[str] = Field(None, description="반복 주기")
+    cancellation_deadline: Optional[str] = Field(None, description="취소/환불 마감일시 YYYY-MM-DD HH:MM")
+    sub_type: Optional[str] = Field(None, description="GIFTICON, APPOINTMENT, TICKET, SUBSCRIPTION, DEADLINE, DELIVERY 중 하나")
 
 class LLMScheduleResponse(BaseModel):
     fields: list[LLMScheduleItem]
@@ -136,11 +139,11 @@ class LLMScheduleResponse(BaseModel):
 
 class LLMPlaceItem(BaseModel):
     name: str = Field(description="장소/식당 이름")
-    region: str | None = Field(None, description="지역명")
-    address: str | None = Field(None, description="상세 주소")
-    category: str | None = Field(None, description="카테고리")
-    rating: str | None = Field(None, description="별점/평점")
-    opening_hours: str | None = Field(None, description="영업시간")
+    region: Optional[str] = Field(None, description="지역명")
+    address: Optional[str] = Field(None, description="상세 주소")
+    category: Optional[str] = Field(None, description="카테고리")
+    rating: Optional[str] = Field(None, description="별점/평점")
+    opening_hours: Optional[str] = Field(None, description="영업시간")
 
 class LLMPlaceResponse(BaseModel):
     fields: list[LLMPlaceItem]
@@ -148,10 +151,10 @@ class LLMPlaceResponse(BaseModel):
 
 class LLMWishlistItem(BaseModel):
     product_name: str = Field(description="상품 이름")
-    price_amount: str | None = Field(None, description="가격 숫자")
-    option: str | None = Field(None, description="선택 옵션")
-    store_name: str | None = Field(None, description="판매처 이름")
-    url: str | None = Field(None, description="URL")
+    price_amount: Optional[str] = Field(None, description="가격 숫자")
+    option: Optional[str] = Field(None, description="선택 옵션")
+    store_name: Optional[str] = Field(None, description="판매처 이름")
+    url: Optional[str] = Field(None, description="URL")
 
 class LLMWishlistResponse(BaseModel):
     fields: list[LLMWishlistItem]
@@ -159,7 +162,7 @@ class LLMWishlistResponse(BaseModel):
 
 class LLMIngredient(BaseModel):
     name: str = Field(description="재료 이름")
-    amount: str | None = Field(None, description="수량")
+    amount: Optional[str] = Field(None, description="수량")
 
 class LLMChecklistItem(BaseModel):
     text: str = Field(description="항목 내용")
@@ -168,31 +171,31 @@ class LLMChecklistItem(BaseModel):
 class LLMMemoItem(BaseModel):
     body: str = Field(description="핵심 내용")
     sub_type: str = Field(description="RECIPE, NOVEL, CHECKLIST, ARTICLE, NOTE, OTHER 중 하나")
-    title: str | None = Field(None, description="제목")
-    source: str | None = Field(None, description="출처")
-    date: str | None = Field(None, description="날짜 YYYY-MM-DD")
-    url: str | None = Field(None, description="URL")
+    title: Optional[str] = Field(None, description="제목")
+    source: Optional[str] = Field(None, description="출처")
+    date: Optional[str] = Field(None, description="날짜 YYYY-MM-DD")
+    url: Optional[str] = Field(None, description="URL")
     
-    recipe_name: str | None = Field(None, description="요리 이름")
-    ingredients: list[LLMIngredient] | None = Field(None, description="재료 리스트")
-    steps: list[str] | None = Field(None, description="조리 순서")
-    servings: str | None = Field(None, description="인분")
-    cook_time: str | None = Field(None, description="조리 시간")
+    recipe_name: Optional[str] = Field(None, description="요리 이름")
+    ingredients: Optional[list[LLMIngredient]] = Field(None, description="재료 리스트")
+    steps: Optional[list[str]] = Field(None, description="조리 순서")
+    servings: Optional[str] = Field(None, description="인분")
+    cook_time: Optional[str] = Field(None, description="조리 시간")
     
-    book_title: str | None = Field(None, description="책 제목")
-    author: str | None = Field(None, description="작가명")
-    platform: str | None = Field(None, description="플랫폼")
-    chapter: str | None = Field(None, description="회차")
-    genre: str | None = Field(None, description="장르")
-    excerpt: str | None = Field(None, description="발췌 원문")
+    book_title: Optional[str] = Field(None, description="책 제목")
+    author: Optional[str] = Field(None, description="작가명")
+    platform: Optional[str] = Field(None, description="플랫폼")
+    chapter: Optional[str] = Field(None, description="회차")
+    genre: Optional[str] = Field(None, description="장르")
+    excerpt: Optional[str] = Field(None, description="발췌 원문")
     
-    checklist_items: list[LLMChecklistItem] | None = Field(None, description="할 일 목록")
-    total_count: int | None = Field(None, description="총 개수")
-    checked_count: int | None = Field(None, description="완료 개수")
+    checklist_items: Optional[list[LLMChecklistItem]] = Field(None, description="할 일 목록")
+    total_count: Optional[int] = Field(None, description="총 개수")
+    checked_count: Optional[int] = Field(None, description="완료 개수")
     
-    headline: str | None = Field(None, description="기사 제목")
-    publisher: str | None = Field(None, description="작성자")
-    published_at: str | None = Field(None, description="발행일")
+    headline: Optional[str] = Field(None, description="기사 제목")
+    publisher: Optional[str] = Field(None, description="작성자")
+    published_at: Optional[str] = Field(None, description="발행일")
 
 class LLMMemoResponse(BaseModel):
     fields: list[LLMMemoItem]

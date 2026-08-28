@@ -1392,68 +1392,160 @@ class HomeScreen extends ConsumerWidget {
   Future<void> _startBatchAIAnalysis(WidgetRef ref) async {
     final selected = ref.read(selectedImagesProvider).toList();
     if (selected.isEmpty) return;
+
+    final cacheMap = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
     
-    // 텍스트 길이에 따라 정렬하기 위해 캐시 가져오기
-    final cache = ref.read(draftCacheProvider);
-    
-    // (이미지 경로, 텍스트 길이) 쌍으로 만들고 길이에 따라 내림차순 정렬
-    final List<MapEntry<String, int>> sortedSelected = selected.map((path) {
-      final textLength = cache[path]?.content.length ?? 0;
-      return MapEntry(path, textLength);
-    }).toList();
-    
-    sortedSelected.sort((a, b) => b.value.compareTo(a.value)); // 긴 글부터 정렬
-    
-    // 투포인터로 가장 긴 것과 가장 짧은 것을 짝지어 2장 단위로 그룹화
-    final List<List<String>> batches = [];
-    int left = 0;
-    int right = sortedSelected.length - 1;
-    
-    while (left <= right) {
-      List<String> batch = [];
-      
-      // 가장 긴 것 2개 추출
-      for (int i = 0; i < 2 && left <= right; i++) {
-        batch.add(sortedSelected[left].key);
-        left++;
+    // 준비 중인 이미지들의 상태를 'loading'으로 변경
+    for (final path in selected) {
+      final draft = cacheMap[path];
+      if (draft != null) {
+        cacheMap[path] = draft.copyWith(aiStatus: 'loading');
       }
-      
-      // 가장 짧은 것 2개 추출
-      for (int i = 0; i < 2 && left <= right; i++) {
-        batch.add(sortedSelected[right].key);
-        right--;
-      }
-      
-      batches.add(batch);
     }
-    
-    // UI 초기화
+    ref.read(draftCacheProvider.notifier).state = cacheMap;
+
     ref.read(selectionModeProvider.notifier).state = false;
     ref.read(selectedImagesProvider.notifier).state = {};
 
     final total = selected.length;
-    int completed = 0;
-    ref.read(serverProgressProvider.notifier).state = '🌐 서버 분석 중 (0/$total)';
+    ref.read(serverProgressProvider.notifier).state = '🌐 서버 분석 중 (다중 입력 일괄 처리 진행 중...)';
 
-    // 배치(4장) 단위로 병렬 실행하되, 완료되는 순서대로 실시간 카운트 증가
-    for (final batch in batches) {
-      final futures = batch.map((imgPath) async {
-        await _runBackgroundAIAnalysis(ref, imgPath);
+    final dio = Dio();
+    const serverUrl = 'http://44.195.33.82:8000/api/analyze/batch';
+
+    final indexToType = {
+      0: 'SCHEDULE', 1: 'PLACE', 2: 'WISHLIST', 3: 'MEMO',
+    };
+    final now = DateTime.now();
+    final dateContextStr = '[현재 날짜: ${now.year}년 ${now.month}월 ${now.day}일]\n';
+    const promptHint = "[시스템 지시: 1. OCR 오인식은 교정하되 임의로 지어내지 말 것. 2. `[ENC:...` 형태로 된 문자열은 민감 정보가 암호화된 값임. 절대 이 문자열의 내용을 해석하거나 '암호화됨' 등의 말로 바꾸지 말고, `[ENC:...` 형태의 원본 문자열 그대로를 JSON 항목 값으로 넣을 것. 3. 호텔/숙소 예약, 티켓 등 하나의 연결된 일정은 여러 항목으로 분리하지 말고 단일 일정 객체 안에 `start_at`, `end_at`을 포함할 것. 4. 티켓의 '관람일(일시)'은 반드시 `start_at`에 기입할 것. 5. '취소마감일시'는 절대 `start_at`, `end_at`, `expires_at` 등 날짜 필드에 넣지 말고 무시하거나 `content`에만 넣을 것.]\n\n";
+
+    // 20장 단위로 청크 분할하여 요청
+    for (int i = 0; i < selected.length; i += 20) {
+      final chunk = selected.sublist(i, (i + 20 > selected.length) ? selected.length : i + 20);
+      
+      final requestItems = chunk.map((path) {
+        final draft = cacheMap[path];
+        if (draft == null || draft.content.trim().isEmpty) return null;
         
-        completed++;
-        if (completed >= total) {
-          ref.read(serverProgressProvider.notifier).state = '✅ 서버 분석 완료 ($total장)';
-          Future.delayed(const Duration(seconds: 3), () {
-            if (ref.read(serverProgressProvider).startsWith('✅')) {
-              ref.read(serverProgressProvider.notifier).state = '';
-            }
-          });
+        final localType = indexToType[draft.category] ?? 'MEMO';
+        final maskedText = MaskingHelper.mask(draft.content);
+        
+        return {
+          'ocr_text': '$promptHint$dateContextStr$maskedText',
+          'type': localType,
+          'masked_tokens': <String>[],
+        };
+      }).toList();
+
+      // null인 항목(텍스트 없음)은 원래 인덱스와 매핑을 유지하기 위해 별도 처리 필요. 
+      // 하지만 BatchAnalyzeRequest는 순서를 유지하므로 null이 아닌 것만 모아서 보내도 original_index로 매핑 가능.
+      // 더 쉬운 방법은 원래 리스트 인덱스대로 보내는 것.
+      List<Map<String, dynamic>> validRequestItems = [];
+      Map<int, String> requestIndexToPath = {};
+      
+      for (int j = 0; j < requestItems.length; j++) {
+        if (requestItems[j] != null) {
+          requestIndexToPath[validRequestItems.length] = chunk[j];
+          validRequestItems.add(requestItems[j]!);
         } else {
-          ref.read(serverProgressProvider.notifier).state = '🌐 서버 분석 중 ($completed/$total)';
+          _updateDraftError(ref, chunk[j], '분석할 텍스트가 없습니다.');
         }
-      });
-      await Future.wait(futures);
+      }
+
+      if (validRequestItems.isEmpty) continue;
+
+      try {
+        final response = await dio.post(
+          serverUrl,
+          data: {'items': validRequestItems},
+          options: Options(contentType: 'application/json'),
+        ).timeout(const Duration(seconds: 45));
+
+        if (response.statusCode == 200 && response.data != null) {
+          dynamic _decryptJson(dynamic data) {
+            if (data is String) return MaskingHelper.unmask(data, null);
+            if (data is List) return data.map((e) => _decryptJson(e)).toList();
+            if (data is Map) return data.map((k, v) => MapEntry(k.toString(), _decryptJson(v)));
+            return data;
+          }
+
+          final responseData = response.data as Map<String, dynamic>;
+          final results = responseData['results'] as List<dynamic>;
+          
+          // 복호화 수행
+          final decryptedResults = _decryptJson(results) as List<dynamic>;
+          
+          // original_index를 기준으로 다중 결과를 그룹핑
+          Map<int, List<Map<String, dynamic>>> groupedResults = {};
+          for (var item in decryptedResults) {
+            final res = item as Map<String, dynamic>;
+            final origIdx = res['original_index'] as int?;
+            if (origIdx != null) {
+              groupedResults.putIfAbsent(origIdx, () => []).add(res);
+            }
+          }
+
+          // 각 이미지별로 결과 업데이트
+          for (final entry in groupedResults.entries) {
+            final idx = entry.key;
+            final dataList = entry.value;
+            final imagePath = requestIndexToPath[idx];
+            if (imagePath == null) continue;
+
+            final firstData = dataList.first;
+            final typeStr = firstData['type'] as String;
+            final firstFields = firstData['fields'] as Map<String, dynamic>;
+
+            final Map<String, dynamic> aiFieldsToSave = Map<String, dynamic>.from(firstFields);
+            if (dataList.length > 1) {
+              aiFieldsToSave['items'] = dataList.map((item) {
+                final f = Map<String, dynamic>.from(item['fields'] as Map<String, dynamic>);
+                f['type'] = item['type'];
+                if (item['id'] != null) f['id'] = item['id'];
+                return f;
+              }).toList();
+            }
+
+            final currentMap = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
+            final draft = currentMap[imagePath];
+            if (draft != null) {
+              final reverseTypeMap = {'SCHEDULE': 0, 'PLACE': 1, 'WISHLIST': 2, 'MEMO': 3};
+              final newCategory = reverseTypeMap[typeStr] ?? 3;
+              
+              currentMap[imagePath] = draft.copyWith(
+                aiStatus: 'completed',
+                aiFields: aiFieldsToSave,
+                category: newCategory,
+              );
+              ref.read(draftCacheProvider.notifier).state = currentMap;
+            }
+          }
+          
+          // 결과가 없는 인덱스 오류 처리
+          for (final idx in requestIndexToPath.keys) {
+            if (!groupedResults.containsKey(idx)) {
+              _updateDraftError(ref, requestIndexToPath[idx]!, '서버가 결과를 반환하지 않았습니다.');
+            }
+          }
+        } else {
+          for (final path in chunk) {
+            _updateDraftError(ref, path, '서버 오류 발생 (${response.statusCode})');
+          }
+        }
+      } catch (e) {
+        for (final path in chunk) {
+          _updateDraftError(ref, path, '통신 오류: $e');
+        }
+      }
     }
+
+    ref.read(serverProgressProvider.notifier).state = '✅ 서버 분석 완료 ($total장)';
+    Future.delayed(const Duration(seconds: 3), () {
+      if (ref.read(serverProgressProvider).startsWith('✅')) {
+        ref.read(serverProgressProvider.notifier).state = '';
+      }
+    });
   }
 
   // 수정본 보관함 최종 저장 분기 로직

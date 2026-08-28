@@ -1,3 +1,4 @@
+from typing import Union, List
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from app.schemas import (
     AnalyzeRequest, AnalyzeResponse, BatchAnalyzeRequest, BatchAnalyzeResponse,
@@ -106,7 +107,7 @@ def analyze_screenshot(request: AnalyzeRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"분석 실패: {str(e)}")
     
-@router.post("/analyze/v2", response_model=AnalyzeResponse | list[AnalyzeResponse])
+@router.post("/analyze/v2", response_model=Union[AnalyzeResponse, List[AnalyzeResponse]])
 async def analyze_v2(request: AnalyzeRequest):
     """Two-stage analysis: Classify -> Detail Extraction."""
     
@@ -457,7 +458,7 @@ def analyze_batch(request: BatchAnalyzeRequest):
                             status=final.get("status", "DRAFT")
                         )
                         responses.append(AnalyzeResponse(
-                            id=row_id, type=final["type"], confidence=final.get("confidence", 0),
+                            id=row_id, original_index=idx, type=final["type"], confidence=final.get("confidence", 0),
                             fields=final.get("fields", {}), missing_fields=final.get("missing_fields", []),
                             status=final.get("status", "DRAFT"), masked_info=masked_info_list
                         ))
@@ -485,7 +486,7 @@ def analyze_batch(request: BatchAnalyzeRequest):
                         status=final.get("status", "DRAFT")
                     )
                     results_map[idx] = AnalyzeResponse(
-                        id=row_id, type=final["type"], confidence=final.get("confidence", 0),
+                        id=row_id, original_index=idx, type=final["type"], confidence=final.get("confidence", 0),
                         fields=final.get("fields", {}), missing_fields=final.get("missing_fields", []),
                         status=final.get("status", "DRAFT"), masked_info=masked_info_list
                     )
