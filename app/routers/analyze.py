@@ -451,10 +451,14 @@ def analyze_batch(request: BatchAnalyzeRequest):
                         # 다중 항목이면 list로 매핑
                         results_map[idx] = responses
                 else:
+                    # MEMO 타입 등에서 extracted_fields.get("items")가 리스트일 경우,
+                    # AnalyzeResponse.fields는 dict를 기대하므로 리스트를 다시 dict로 감싸줍니다.
+                    raw_fields = extracted_fields.get("items", extracted_fields)
+                    
                     final = {
                         "type": ttype,
                         "confidence": classify_confidence,
-                        "fields": extracted_fields.get("items", extracted_fields), # if single dict
+                        "fields": {"items": raw_fields} if isinstance(raw_fields, list) else raw_fields,
                         "missing_fields": extracted_fields.get("missing_fields", [])
                     }
                     if ttype != "MEMO" or not isinstance(final["fields"], list):

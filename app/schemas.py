@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel
 from enum import Enum
 
@@ -40,7 +40,7 @@ class AnalyzeResponse(BaseModel):
     original_index: Optional[int] = None  # 배치 분석 시 원본 요청 배열의 인덱스
     type: ScreenshotType
     confidence: float
-    fields: dict
+    fields: Union[dict, list]
     missing_fields: list[str] = []
     status: str = "DRAFT"
     masked_info: list[dict] = []  # 앱에서 마스킹해서 보낸 원본 토큰의 구조화된 정보
