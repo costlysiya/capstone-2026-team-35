@@ -959,7 +959,7 @@ class HomeScreen extends ConsumerWidget {
           'masked_tokens': <String>[],
         },
         options: Options(contentType: 'application/json'),
-      ).timeout(const Duration(seconds: 15));
+      ).timeout(const Duration(seconds: 60));
       
       if (response.statusCode == 200 && response.data != null) {
         dynamic _decryptJson(dynamic data) {
@@ -1074,9 +1074,13 @@ class HomeScreen extends ConsumerWidget {
         }
         // 4. MEMO 매핑
         else if (categoryIndex == 3) {
-          newTitle = firstFields['recipe_name'] ?? firstFields['book_title'] ?? firstFields['headline'] ?? firstFields['label'] ?? firstFields['title'] ?? '새로운 메모';
-          if (firstFields['sub_type'] != null && firstFields['sub_type'].toString().isNotEmpty) {
-            ref.read(memoSubTypeProvider.notifier).state = firstFields['sub_type'].toString();
+          Map<String, dynamic> memoFields = firstFields;
+          if (firstFields['items'] != null && (firstFields['items'] as List).isNotEmpty) {
+            memoFields = (firstFields['items'] as List).first as Map<String, dynamic>;
+          }
+          newTitle = memoFields['recipe_name'] ?? memoFields['book_title'] ?? memoFields['headline'] ?? memoFields['label'] ?? memoFields['title'] ?? '새로운 메모';
+          if (memoFields['sub_type'] != null && memoFields['sub_type'].toString().isNotEmpty) {
+            ref.read(memoSubTypeProvider.notifier).state = memoFields['sub_type'].toString();
           } else {
             ref.read(memoSubTypeProvider.notifier).state = 'NOTE';
           }
@@ -1242,7 +1246,7 @@ class HomeScreen extends ConsumerWidget {
           'masked_tokens': <String>[],
         },
         options: Options(contentType: 'application/json'),
-      ).timeout(const Duration(seconds: 30));
+      ).timeout(const Duration(seconds: 90));
       
       if (response.statusCode == 200 && response.data != null) {
         dynamic _decryptJson(dynamic data) {
@@ -1390,6 +1394,7 @@ class HomeScreen extends ConsumerWidget {
   }
 
   Future<void> _startBatchAIAnalysis(WidgetRef ref) async {
+    print("🚀 [DEBUG] _startBatchAIAnalysis CALLED!");
     final selected = ref.read(selectedImagesProvider).toList();
     if (selected.isEmpty) return;
 
@@ -1460,7 +1465,7 @@ class HomeScreen extends ConsumerWidget {
           serverUrl,
           data: {'items': validRequestItems},
           options: Options(contentType: 'application/json'),
-        ).timeout(const Duration(seconds: 45));
+        ).timeout(const Duration(seconds: 180));
 
         if (response.statusCode == 200 && response.data != null) {
           dynamic _decryptJson(dynamic data) {
@@ -1471,9 +1476,8 @@ class HomeScreen extends ConsumerWidget {
           }
 
           final responseData = response.data as Map<String, dynamic>;
-          final results = responseData['results'] as List<dynamic>;
+          final results = responseData['results'] as List<dynamic>? ?? [];
           
-          // 복호화 수행
           final decryptedResults = _decryptJson(results) as List<dynamic>;
           
           // original_index를 기준으로 다중 결과를 그룹핑
@@ -1513,11 +1517,63 @@ class HomeScreen extends ConsumerWidget {
               final reverseTypeMap = {'SCHEDULE': 0, 'PLACE': 1, 'WISHLIST': 2, 'MEMO': 3};
               final newCategory = reverseTypeMap[typeStr] ?? 3;
               
+              String newTitle = '새로운 항목';
+              String? newPlace;
+              String? newSchedule;
+              String? newScheduleEnd;
+              String newContent = '';
+              int subCategoryIndex = 0;
+
+              Map<String, dynamic> itemFields = dataList.length > 1 ? dataList.first['fields'] : firstFields;
+              if (itemFields['items'] != null && (itemFields['items'] as List).isNotEmpty) {
+                itemFields = (itemFields['items'] as List).first as Map<String, dynamic>;
+              }
+
+              if (newCategory == 0) {
+                newTitle = itemFields['schedule_name'] ?? itemFields['title'] ?? '새로운 일정';
+                newSchedule = itemFields['start_at']?.toString();
+                newScheduleEnd = itemFields['end_at']?.toString();
+                newContent = itemFields['content'] ?? itemFields['memo'] ?? itemFields['description'] ?? '';
+              } else if (newCategory == 1) {
+                newTitle = itemFields['place_name'] ?? itemFields['title'] ?? '새로운 장소';
+                newPlace = itemFields['address'] ?? itemFields['location'];
+                newContent = itemFields['content'] ?? '';
+              } else if (newCategory == 2) {
+                newTitle = itemFields['product_name'] ?? itemFields['title'] ?? '새로운 위시';
+                newContent = itemFields['content'] ?? '';
+              } else {
+                newTitle = itemFields['recipe_name'] ?? itemFields['book_title'] ?? itemFields['headline'] ?? itemFields['label'] ?? itemFields['title'] ?? '새로운 메모';
+                newContent = itemFields['content'] ?? itemFields['body'] ?? '';
+                print('🚀 [DEBUG] MEMO Extracted - Title: $newTitle, Content: $newContent');
+                print('🚀 [DEBUG] itemFields: $itemFields');
+                if (itemFields['sub_type'] == 'RECIPE') {
+                  subCategoryIndex = 0;
+                } else if (itemFields['sub_type'] == 'BOOK_REVIEW') {
+                  subCategoryIndex = 1;
+                } else if (itemFields['sub_type'] == 'NEWS') {
+                  subCategoryIndex = 2;
+                }
+              }
+              
+              String updatedContent = draft.content;
+              if (newContent.isNotEmpty) {
+                if (updatedContent.isEmpty) {
+                  updatedContent = newContent;
+                } else {
+                  updatedContent = '$updatedContent\n$newContent';
+                }
+              }
+
               currentMap[imagePath] = draft.copyWith(
-                aiStatus: 'completed',
+                aiStatus: 'success',
                 aiFields: aiFieldsToSave,
                 category: newCategory,
-                title: aiFieldsToSave['title']?.toString() ?? draft.title,
+                title: newTitle,
+                content: updatedContent,
+                placeLocation: newPlace ?? draft.placeLocation,
+                scheduleDate: newSchedule ?? draft.scheduleDate,
+                scheduleEndDate: newScheduleEnd ?? draft.scheduleEndDate,
+                subCategory: subCategoryIndex,
               );
               ref.read(draftCacheProvider.notifier).state = currentMap;
             }
