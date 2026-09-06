@@ -315,6 +315,7 @@ def classify_batch(request: BatchAnalyzeRequest):
 
 @router.post("/analyze/batch", response_model=BatchAnalyzeResponse)
 def analyze_batch(request: BatchAnalyzeRequest):
+    print(f"DEBUG RECV: {request}")
     """
     복수 이미지를 한 번에 분석.
     각 항목을 순차적으로 처리하고 결과를 모아서 반환.
@@ -490,7 +491,7 @@ def analyze_batch(request: BatchAnalyzeRequest):
             else:
                 results.append(val)
 
-    return BatchAnalyzeResponse(
+    print(f"DEBUG: returning {len(results)} results, errors: {errors}"); return BatchAnalyzeResponse(
         total=len(request.items),
         success=len(results),
         failed=len(errors),

@@ -550,6 +550,7 @@ class HomeScreen extends ConsumerWidget {
           'status': 'DRAFT',
         });
       } catch (e) {
+        print("🚀 [DEBUG] _startBatchAIAnalysis ERROR: $e");
         print('DB draft insert error (non-fatal): $e');
       }
 
@@ -936,7 +937,7 @@ class HomeScreen extends ConsumerWidget {
     }
     try {
       final dio = Dio();
-      const serverUrl = 'http://44.195.33.82:8000/api/analyze/v2';
+      const serverUrl = 'http://172.30.1.35:8000/api/analyze/v2';
       
       final localCategoryIndex = ref.read(selectedCategoryProvider);
       final indexToType = {
@@ -1227,7 +1228,7 @@ class HomeScreen extends ConsumerWidget {
 
     try {
       final dio = Dio();
-      const serverUrl = 'http://44.195.33.82:8000/api/analyze/v2';
+      const serverUrl = 'http://172.30.1.35:8000/api/analyze/v2';
       
       final indexToType = {
         0: 'SCHEDULE', 1: 'PLACE', 2: 'WISHLIST', 3: 'MEMO',
@@ -1416,7 +1417,7 @@ class HomeScreen extends ConsumerWidget {
     ref.read(serverProgressProvider.notifier).state = '🌐 서버 분석 중 (다중 입력 일괄 처리 진행 중...)';
 
     final dio = Dio();
-    const serverUrl = 'http://44.195.33.82:8000/api/analyze/batch';
+    const serverUrl = 'http://172.30.1.35:8000/api/analyze/batch';
 
     final indexToType = {
       0: 'SCHEDULE', 1: 'PLACE', 2: 'WISHLIST', 3: 'MEMO',
@@ -1478,6 +1479,7 @@ class HomeScreen extends ConsumerWidget {
           final responseData = response.data as Map<String, dynamic>;
           final results = responseData['results'] as List<dynamic>? ?? [];
           
+          print("🚀 [DEBUG] Batch API Response results length: ${results.length}");
           final decryptedResults = _decryptJson(results) as List<dynamic>;
           
           // original_index를 기준으로 다중 결과를 그룹핑
@@ -1535,24 +1537,30 @@ class HomeScreen extends ConsumerWidget {
                 newScheduleEnd = itemFields['end_at']?.toString();
                 newContent = itemFields['content'] ?? itemFields['memo'] ?? itemFields['description'] ?? '';
               } else if (newCategory == 1) {
-                newTitle = itemFields['place_name'] ?? itemFields['title'] ?? '새로운 장소';
-                newPlace = itemFields['address'] ?? itemFields['location'];
+                newTitle = itemFields['name'] ?? itemFields['title'] ?? '새로운 장소';
+                newPlace = itemFields['address'] ?? itemFields['region'];
                 newContent = itemFields['content'] ?? '';
               } else if (newCategory == 2) {
                 newTitle = itemFields['product_name'] ?? itemFields['title'] ?? '새로운 위시';
                 newContent = itemFields['content'] ?? '';
               } else {
-                newTitle = itemFields['recipe_name'] ?? itemFields['book_title'] ?? itemFields['headline'] ?? itemFields['label'] ?? itemFields['title'] ?? '새로운 메모';
-                newContent = itemFields['content'] ?? itemFields['body'] ?? '';
-                print('🚀 [DEBUG] MEMO Extracted - Title: $newTitle, Content: $newContent');
-                print('🚀 [DEBUG] itemFields: $itemFields');
-                if (itemFields['sub_type'] == 'RECIPE') {
-                  subCategoryIndex = 0;
-                } else if (itemFields['sub_type'] == 'BOOK_REVIEW') {
-                  subCategoryIndex = 1;
-                } else if (itemFields['sub_type'] == 'NEWS') {
-                  subCategoryIndex = 2;
+                Map<String, dynamic> memoFields = itemFields;
+                if (itemFields['items'] != null && (itemFields['items'] as List).isNotEmpty) {
+                  memoFields = (itemFields['items'] as List).first as Map<String, dynamic>;
                 }
+                newTitle = memoFields['recipe_name'] ?? memoFields['book_title'] ?? memoFields['headline'] ?? memoFields['label'] ?? memoFields['title'] ?? '새로운 메모';
+                newContent = memoFields['content'] ?? memoFields['body'] ?? '';
+                print('🚀 [DEBUG] MEMO Extracted - Title: $newTitle, Content: $newContent');
+                
+                final subType = memoFields['sub_type'];
+                if (subType == 'RECIPE') subCategoryIndex = 0;
+                else if (subType == 'QR_CODE') subCategoryIndex = 1;
+                else if (subType == 'NOVEL') subCategoryIndex = 2;
+                else if (subType == 'CHECKLIST') subCategoryIndex = 3;
+                else if (subType == 'ARTICLE') subCategoryIndex = 4;
+                else if (subType == 'NOTE') subCategoryIndex = 5;
+                else if (subType == 'OTHER') subCategoryIndex = 6;
+
               }
               
               String updatedContent = draft.content;
@@ -1591,6 +1599,7 @@ class HomeScreen extends ConsumerWidget {
           }
         }
       } catch (e) {
+        print("🚀 [DEBUG] _startBatchAIAnalysis ERROR: $e");
         for (final path in chunk) {
           _updateDraftError(ref, path, '통신 오류: $e');
         }
@@ -1657,6 +1666,7 @@ class HomeScreen extends ConsumerWidget {
         final savedFile = await originalFile.copy('${appDocDir.path}/$fileName');
         finalImagePath = savedFile.path;
       } catch (e) {
+        print("🚀 [DEBUG] _startBatchAIAnalysis ERROR: $e");
         print('이미지 복사 실패: $e');
         finalImagePath = images[activeIndex].path; // fallback
       }
@@ -1844,6 +1854,7 @@ class HomeScreen extends ConsumerWidget {
           final result = await PhotoManager.editor.deleteWithIds(pendingDeletes);
           print('갤러리 원본 일괄 삭제 요청 결과: $result');
         } catch (e) {
+        print("🚀 [DEBUG] _startBatchAIAnalysis ERROR: $e");
           print('갤러리 삭제 중 오류: $e');
         }
         ref.read(pendingDeleteListProvider.notifier).state = []; // 큐 초기화
@@ -2433,6 +2444,7 @@ class HomeScreen extends ConsumerWidget {
                   final cardStyle = _getCategoryStyle(targetCatId, subCategory: targetSubCatId);
                   _showCardDetail(context, ref, card, cardStyle);
                 } catch (e) {
+        print("🚀 [DEBUG] _startBatchAIAnalysis ERROR: $e");
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('해당 항목을 찾을 수 없습니다.')));
                 }
               }
@@ -3232,6 +3244,7 @@ class HomeScreen extends ConsumerWidget {
                                                        );
                                                      }
                                                    } catch (e) {
+        print("🚀 [DEBUG] _startBatchAIAnalysis ERROR: $e");
                                                       ScaffoldMessenger.of(context).showSnackBar(
                                                        SnackBar(content: Text('날짜 형식을 인식할 수 없습니다: $dateStr'))
                                                      );
