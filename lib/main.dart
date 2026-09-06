@@ -1517,6 +1517,7 @@ class HomeScreen extends ConsumerWidget {
                 aiStatus: 'completed',
                 aiFields: aiFieldsToSave,
                 category: newCategory,
+                title: aiFieldsToSave['title']?.toString() ?? draft.title,
               );
               ref.read(draftCacheProvider.notifier).state = currentMap;
             }
