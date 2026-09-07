@@ -731,7 +731,14 @@ class HomeScreen extends ConsumerWidget {
       final int availableSlots = 20 - currentList.length;
       
       if (availableSlots <= 0) {
-        // 이미 20장이 꽉 찼으면 추가 안 함 (선택적: SnackBar 등으로 알림 가능)
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('📋 대기실에는 최대 20장의 사진만 추가할 수 있습니다.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
         return;
       }
 
