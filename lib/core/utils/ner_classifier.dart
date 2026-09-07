@@ -81,7 +81,7 @@ class NerClassifier {
       if (label.startsWith('B-') || label.startsWith('I-')) {
         final entityType = label.substring(2);
         // 마스킹할 엔티티 종류 정의 (이름, 전화번호 등)
-        if (['PER', 'PHONE', 'ORG', 'LOC'].contains(entityType)) {
+        if (['PER', 'PHONE'].contains(entityType)) {
           final start = tokenInfos[i].startOffset;
           final end = tokenInfos[i].endOffset;
           if (start != -1 && end != -1) {
