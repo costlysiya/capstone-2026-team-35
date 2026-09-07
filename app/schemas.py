@@ -143,7 +143,6 @@ class LLMPlaceItem(BaseModel):
     region: Optional[str] = Field(None, description="지역명")
     address: Optional[str] = Field(None, description="상세 주소")
     category: Optional[str] = Field(None, description="카테고리")
-    rating: Optional[str] = Field(None, description="별점/평점")
     opening_hours: Optional[str] = Field(None, description="영업시간")
 
 class LLMPlaceResponse(BaseModel):

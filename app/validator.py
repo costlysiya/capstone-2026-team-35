@@ -179,50 +179,6 @@ def normalize_address_string(address: str) -> str:
     return address
 
 
-def validate_place_rating(rating: Any) -> Optional[str]:
-    """평점을 5.0 만점 기준으로 정규화하고 4/10 등 분수/오인식 필터링"""
-    if not rating:
-        return None
-    r_str = str(rating).strip()
-    
-    # 4/10, 1/5 같은 분수/사진 번호 형태인지 검사
-    if "/" in r_str:
-        parts = r_str.split("/")
-        if len(parts) == 2:
-            try:
-                num = float(parts[0].strip())
-                denom = float(parts[1].strip())
-                # 소수점이 포함된 10점 만점 평점인 경우 (예: 8.5/10) 또는 6점 이상의 고득점
-                if denom == 10.0 and (num >= 6.0 or "." in parts[0]):
-                    return f"{(num / 2):.1f}"
-                # 5점 만점인 경우 (예: 4.5/5)
-                elif denom == 5.0 and num >= 3.0:
-                    return f"{num:.1f}"
-                else:
-                    # 4/10, 1/5 처럼 사진 장수(페이지 번호)나 일반 분수는 평점 무효 처리
-                    return None
-            except ValueError:
-                return None
-
-    # 일반 숫자 평점 파싱
-    import re
-    cleaned = re.sub(r'[^0-9.]', '', r_str)
-    if not cleaned:
-        return None
-    try:
-        val = float(cleaned)
-        # 0.0 ~ 5.0 사이 유효 평점
-        if 0.0 <= val <= 5.0:
-            return f"{val:.1f}"
-        # 5.0 초과 10.0 이하 -> 10점 만점 표기로 보고 5점 만점으로 환산
-        elif 5.0 < val <= 10.0:
-            return f"{(val / 2):.1f}"
-        else:
-            return None
-    except ValueError:
-        return None
-
-
 def _enrich_place_fields(fields: dict) -> dict:
     """Enrich PLACE fields for map integration."""
     fields.setdefault("keep_photo", False)      # 장소는 사진 불필요
@@ -239,9 +195,8 @@ def _enrich_place_fields(fields: dict) -> dict:
         if address:
             fields["address"] = normalize_address_string(address)
 
-    # ⭐ 평점(rating) 5.0 만점 기준 정규화 및 오인식(4/10 등) 필터링
-    if "rating" in fields and fields["rating"] is not None:
-        fields["rating"] = validate_place_rating(fields["rating"])
+    # 🚫 평점(rating) 기능 제외: 필드에서 완전히 제거
+    fields.pop("rating", None)
 
     return fields
 
