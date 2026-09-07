@@ -122,8 +122,9 @@ class LLMClassifyResponse(BaseModel):
 
 class LLMScheduleItem(BaseModel):
     title: str = Field(description="일정/기프티콘/예약 이름")
-    expires_at: Optional[str] = Field(None, description="만료일/종료일 YYYY-MM-DD")
-    start_at: Optional[str] = Field(None, description="시작일/예약일/출발일 YYYY-MM-DD")
+    start_at: Optional[str] = Field(None, description="시작일/예약일/출발일/체크인일 YYYY-MM-DD")
+    end_at: Optional[str] = Field(None, description="종료일/도착일/체크아웃일 YYYY-MM-DD")
+    expires_at: Optional[str] = Field(None, description="만료일/유효기간 YYYY-MM-DD")
     start_time: Optional[str] = Field(None, description="시작 시각 HH:MM")
     end_time: Optional[str] = Field(None, description="종료 시각 HH:MM")
     reminder_days: Optional[list[int]] = Field(None, description="알림 추천 일수 리스트")
