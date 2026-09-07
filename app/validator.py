@@ -92,12 +92,108 @@ def _enrich_schedule_fields(fields: dict) -> dict:
     return fields
 
 
+STANDARD_REGIONS = [
+    "서울", "부산", "대구", "인천", "광주", "대전", "울산",
+    "경기", "강원", "충청", "전라", "경북", "경남", "제주", "해외"
+]
+
+REGION_ALIAS_MAP = {
+    "경상남도": "경남",
+    "경상북도": "경북",
+    "전라남도": "전라",
+    "전라북도": "전라",
+    "전남": "전라",
+    "전북": "전라",
+    "충청남도": "충청",
+    "충청북도": "충청",
+    "충남": "충청",
+    "충북": "충청",
+    "서울특별시": "서울",
+    "서울시": "서울",
+    "부산광역시": "부산",
+    "부산시": "부산",
+    "대구광역시": "대구",
+    "대구시": "대구",
+    "인천광역시": "인천",
+    "인천시": "인천",
+    "광주광역시": "광주",
+    "대전광역시": "대전",
+    "대전시": "대전",
+    "울산광역시": "울산",
+    "울산시": "울산",
+    "경기도": "경기",
+    "강원특별자치도": "강원",
+    "강원도": "강원",
+    "제주특별자치도": "제주",
+    "제주도": "제주",
+}
+
+
+def normalize_region_string(region: str, address: str = "") -> str:
+    """지역명 및 주소를 기반으로 15개 표준 광역 지자체명으로 시작하도록 정규화"""
+    combined = f"{region} {address}".strip()
+    
+    # 1. '해운대구'의 '대구' 오인식 방지 (최우선 예외)
+    if "해운대" in combined:
+        if region.startswith("대구"):
+            region = region.replace("대구", "부산", 1).strip()
+        elif not region.startswith("부산"):
+            region = f"부산 {region}".strip()
+        return region
+
+    # 2. 풀네임 접두사 -> 2글자 표준 지자체명 변환
+    for full_name, std_name in REGION_ALIAS_MAP.items():
+        if region.startswith(full_name):
+            region = region.replace(full_name, std_name, 1).strip()
+            return region
+
+    # 3. region이 표준 지자체명으로 시작하지 않을 때, 텍스트 전체에서 추론
+    if not any(region.startswith(r) for r in STANDARD_REGIONS):
+        for full_name, std_name in REGION_ALIAS_MAP.items():
+            if full_name in combined:
+                return f"{std_name} {region}".strip()
+        # 이미 2글자 표준명이 포함되어 있는 경우 (예: "경남", "전라", "충청" 등)
+        for std_name in STANDARD_REGIONS:
+            if std_name in combined:
+                return f"{std_name} {region}".strip()
+
+    return region
+
+
+def normalize_address_string(address: str) -> str:
+    """주소 맨 앞의 광역 지자체명을 15개 표준 명칭으로 축약하여 프론트 contains 필터링과 호환되도록 처리"""
+    if not address:
+        return address
+    
+    # 1. 해운대구에 부산이 없으면 앞에 부산 추가
+    if "해운대" in address and not address.startswith("부산"):
+        address = f"부산 {address}".strip()
+        
+    # 2. 경상남도 -> 경남 등 맨 앞 단어 표준화
+    for full_name, std_name in REGION_ALIAS_MAP.items():
+        if address.startswith(full_name):
+            address = address.replace(full_name, std_name, 1).strip()
+            break
+            
+    return address
+
+
 def _enrich_place_fields(fields: dict) -> dict:
     """Enrich PLACE fields for map integration."""
     fields.setdefault("keep_photo", False)      # 장소는 사진 불필요
     fields.setdefault("map_ready", bool(fields.get("address") or fields.get("region")))
     # category 정규화 (없으면 "기타")
     fields.setdefault("category", "기타")
+
+    # 🗺️ 15대 표준 광역 지자체명 정규화 (프론트엔드 필터링 호환)
+    region = fields.get("region") or ""
+    address = fields.get("address") or ""
+    
+    if region or address:
+        fields["region"] = normalize_region_string(region, address)
+        if address:
+            fields["address"] = normalize_address_string(address)
+
     return fields
 
 
