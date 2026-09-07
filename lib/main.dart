@@ -937,7 +937,7 @@ class HomeScreen extends ConsumerWidget {
     }
     try {
       final dio = Dio();
-      const serverUrl = 'http://172.30.1.35:8000/api/analyze/v2';
+      const serverUrl = 'http://44.195.33.82:8000/api/analyze/v2';
       
       final localCategoryIndex = ref.read(selectedCategoryProvider);
       final indexToType = {
@@ -1228,7 +1228,7 @@ class HomeScreen extends ConsumerWidget {
 
     try {
       final dio = Dio();
-      const serverUrl = 'http://172.30.1.35:8000/api/analyze/v2';
+      const serverUrl = 'http://44.195.33.82:8000/api/analyze/v2';
       
       final indexToType = {
         0: 'SCHEDULE', 1: 'PLACE', 2: 'WISHLIST', 3: 'MEMO',
@@ -1417,7 +1417,7 @@ class HomeScreen extends ConsumerWidget {
     ref.read(serverProgressProvider.notifier).state = '🌐 서버 분석 중 (다중 입력 일괄 처리 진행 중...)';
 
     final dio = Dio();
-    const serverUrl = 'http://172.30.1.35:8000/api/analyze/batch';
+    const serverUrl = 'http://44.195.33.82:8000/api/analyze/batch';
 
     final indexToType = {
       0: 'SCHEDULE', 1: 'PLACE', 2: 'WISHLIST', 3: 'MEMO',
