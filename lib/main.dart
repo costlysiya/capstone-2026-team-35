@@ -611,8 +611,16 @@ class HomeScreen extends ConsumerWidget {
       ref.read(scheduleEndDateProvider).text = draft.scheduleEndDate;
       ref.read(placeLocationProvider).text = draft.placeLocation;
       
-      if (draft.category == 3 && draft.aiFields != null && draft.aiFields!['sub_type'] != null) {
-        ref.read(memoSubTypeProvider.notifier).state = draft.aiFields!['sub_type'].toString();
+      if (draft.category == 3 && draft.aiFields != null) {
+        String? subType = draft.aiFields!['sub_type']?.toString();
+        if (subType == null && draft.aiFields!['items'] != null && (draft.aiFields!['items'] as List).isNotEmpty) {
+          subType = (draft.aiFields!['items'] as List).first['sub_type']?.toString();
+        }
+        if (subType != null && subType.isNotEmpty) {
+          ref.read(memoSubTypeProvider.notifier).state = subType;
+        } else {
+          ref.read(memoSubTypeProvider.notifier).state = 'NOTE';
+        }
       } else {
         ref.read(memoSubTypeProvider.notifier).state = 'NOTE';
       }
@@ -4632,10 +4640,14 @@ class DynamicFeaturesCard extends ConsumerWidget {
       ref.read(titleControllerProvider).text = item['product_name'] ?? '';
       ref.read(contentControllerProvider).text = item['content'] ?? '';
     } else if (itemCategory == 3) { // MEMO
-      ref.read(titleControllerProvider).text = item['recipe_name'] ?? item['book_title'] ?? item['headline'] ?? item['label'] ?? item['title'] ?? '';
-      ref.read(contentControllerProvider).text = item['content'] ?? item['body'] ?? '';
-      if (item['sub_type'] != null && item['sub_type'].toString().isNotEmpty) {
-        ref.read(memoSubTypeProvider.notifier).state = item['sub_type'].toString();
+      Map<String, dynamic> memoFields = item;
+      if (item['items'] != null && (item['items'] as List).isNotEmpty) {
+        memoFields = (item['items'] as List).first as Map<String, dynamic>;
+      }
+      ref.read(titleControllerProvider).text = memoFields['recipe_name'] ?? memoFields['book_title'] ?? memoFields['headline'] ?? memoFields['label'] ?? memoFields['title'] ?? '';
+      ref.read(contentControllerProvider).text = memoFields['content'] ?? memoFields['body'] ?? '';
+      if (memoFields['sub_type'] != null && memoFields['sub_type'].toString().isNotEmpty) {
+        ref.read(memoSubTypeProvider.notifier).state = memoFields['sub_type'].toString();
       } else {
         ref.read(memoSubTypeProvider.notifier).state = 'NOTE';
       }
