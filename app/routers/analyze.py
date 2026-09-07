@@ -1,4 +1,5 @@
 from typing import Union, List
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from app.schemas import (
     AnalyzeRequest, AnalyzeResponse, BatchAnalyzeRequest, BatchAnalyzeResponse,
@@ -313,14 +314,34 @@ def classify_batch(request: BatchAnalyzeRequest):
     
     return BatchClassifyResponse(total=len(request.items), results=final_results)
 
+def _process_batch_item(idx: int, item: AnalyzeRequest):
+    """단일 항목을 독립적으로 분석하고 original_index를 정확히 보존"""
+    try:
+        clean_text = item.ocr_text.strip()
+        if len(clean_text) < 3:
+            return idx, None, "텍스트가 너무 짧습니다 (3자 이상 필요)"
+
+        resp = analyze_v2(item)
+        if isinstance(resp, list):
+            for r in resp:
+                r.original_index = idx
+            return idx, resp, None
+        else:
+            resp.original_index = idx
+            return idx, [resp], None
+    except Exception as e:
+        logger.error(f"[batch] 항목 {idx} 분석 중 오류 발생: {e}", exc_info=True)
+        return idx, None, str(e)
+
+
 @router.post("/analyze/batch", response_model=BatchAnalyzeResponse)
 def analyze_batch(request: BatchAnalyzeRequest):
-    print(f"DEBUG RECV: {request}")
     """
-    복수 이미지를 한 번에 분석.
-    각 항목을 순차적으로 처리하고 결과를 모아서 반환.
+    복수 이미지를 병렬 워커(ThreadPoolExecutor)로 독립 분석.
+    각 이미지의 LLM 컨텍스트를 물리적으로 격리하여 사진 간 정보 섞임(문맥 오염)을 원천 차단.
     최대 20개까지 허용.
     """
+    logger.info(f"[analyze_batch] 총 {len(request.items)}건 병렬 독립 분석 시작")
     if len(request.items) > 20:
         raise HTTPException(
             status_code=400,
@@ -333,165 +354,31 @@ def analyze_batch(request: BatchAnalyzeRequest):
             detail="분석할 항목이 없습니다"
         )
 
-    results = []
-    errors = []
-    results_map = {}
-    
-    # 1. 1차 그룹화
-    classify_needed = []
-    type_groups = {"SCHEDULE": [], "PLACE": [], "WISHLIST": [], "MEMO": []}
-    
-    for idx, item in enumerate(request.items):
-        clean_text = item.ocr_text.strip()
-        if len(clean_text) < 3:
-            errors.append({"index": idx, "error": "텍스트가 너무 짧습니다"})
-            continue
-        if len(clean_text) > 5000:
-            item.ocr_text = clean_text[:5000]
-            
-        if item.type:
-            type_groups[item.type.value].append((idx, item, 1.0)) # (idx, item, classify_confidence)
-        else:
-            classify_needed.append((idx, item))
-            
-    # 2. Bulk Classify
-    if classify_needed:
-        bulk_texts = [f"[{idx}]\n{item.ocr_text}" for idx, item in classify_needed]
-        bulk_input_str = "\n---\n".join(bulk_texts)
-        try:
-            bulk_classify_result = call_llm_with_limit(
-                call_llm,
-                system_prompt=get_system_prompt(is_bulk=True),
-                user_text=bulk_input_str,
-                response_format=LLMBulkClassifyResponse
-            )
-            for res_item in bulk_classify_result.get("results", []):
-                idx = res_item.get("index")
-                ctype = res_item.get("type", "MEMO")
-                cconf = res_item.get("confidence", 0.0)
-                
-                original_item = next((it for i, it in classify_needed if i == idx), None)
-                if original_item:
-                    type_groups.setdefault(ctype, []).append((idx, original_item, cconf))
-        except Exception as e:
-            logger.error(f"[bulk_analyze] Bulk classify error: {e}")
-            for idx, item in classify_needed:
-                type_groups["MEMO"].append((idx, item, 0.0))
-                
-    # 3. Bulk Extract per Type
-    schema_map = {
-        "SCHEDULE": LLMBulkScheduleResponse,
-        "PLACE": LLMBulkPlaceResponse,
-        "WISHLIST": LLMBulkWishlistResponse,
-        "MEMO": LLMBulkMemoResponse
-    }
-    
-    for ttype, titems in type_groups.items():
-        if not titems:
-            continue
-            
-        bulk_texts = [f"[{idx}]\n{item.ocr_text}" for idx, item, _ in titems]
-        bulk_input_str = "\n---\n".join(bulk_texts)
-        extract_schema = schema_map.get(ttype, LLMBulkMemoResponse)
-        
-        try:
-            bulk_extract_result = call_llm_with_limit(
-                call_llm,
-                system_prompt=get_type_prompt(ttype, is_bulk=True),
-                user_text=bulk_input_str,
-                response_format=extract_schema
-            )
-            
-            for res_item in bulk_extract_result.get("results", []):
-                idx = res_item.get("index")
-                if idx is None:
-                    continue
-                
-                # find original item & confidence
-                match = next(((item, cconf) for i, item, cconf in titems if i == idx), None)
-                if not match:
-                    continue
-                original_item, classify_confidence = match
-                
-                # Token Masking Structure
-                masked_info_list = []
-                if original_item.masked_tokens:
-                    for token in original_item.masked_tokens:
-                        t_type = _detect_token_type(token)
-                        masked_info_list.append({"original": token, "type": t_type})
-                
-                extracted_fields = _extract_fields(res_item)
-                
-                if ttype != "MEMO" and "items" in extracted_fields and isinstance(extracted_fields["items"], list) and len(extracted_fields["items"]) > 0:
-                    responses = []
-                    for single_item in extracted_fields["items"]:
-                        final = {
-                            "type": ttype,
-                            "confidence": classify_confidence,
-                            "fields": single_item,
-                            "missing_fields": extracted_fields.get("missing_fields", [])
-                        }
-                        final = validate_result(final)
-                        
-                        row_id = save_result(
-                            type=final["type"],
-                            confidence=final.get("confidence", 0),
-                            fields=json.dumps(final.get("fields", {}), ensure_ascii=False),
-                            image_hash=original_item.image_hash,
-                            status=final.get("status", "DRAFT")
-                        )
-                        responses.append(AnalyzeResponse(
-                            id=row_id, original_index=idx, type=final["type"], confidence=final.get("confidence", 0),
-                            fields=final.get("fields", {}), missing_fields=final.get("missing_fields", []),
-                            status=final.get("status", "DRAFT"), masked_info=masked_info_list
-                        ))
-                    
-                    if len(responses) == 1:
-                        results_map[idx] = responses[0]
-                    else:
-                        # 다중 항목이면 list로 매핑
-                        results_map[idx] = responses
-                else:
-                    # MEMO 타입 등에서 extracted_fields.get("items")가 리스트일 경우,
-                    # AnalyzeResponse.fields는 dict를 기대하므로 리스트를 다시 dict로 감싸줍니다.
-                    raw_fields = extracted_fields.get("items", extracted_fields)
-                    
-                    final = {
-                        "type": ttype,
-                        "confidence": classify_confidence,
-                        "fields": {"items": raw_fields} if isinstance(raw_fields, list) else raw_fields,
-                        "missing_fields": extracted_fields.get("missing_fields", [])
-                    }
-                    if ttype != "MEMO" or not isinstance(final["fields"], list):
-                        final = validate_result(final)
-                        
-                    row_id = save_result(
-                        type=final["type"],
-                        confidence=final.get("confidence", 0),
-                        fields=json.dumps(final.get("fields", {}), ensure_ascii=False),
-                        image_hash=original_item.image_hash,
-                        status=final.get("status", "DRAFT")
-                    )
-                    results_map[idx] = AnalyzeResponse(
-                        id=row_id, original_index=idx, type=final["type"], confidence=final.get("confidence", 0),
-                        fields=final.get("fields", {}), missing_fields=final.get("missing_fields", []),
-                        status=final.get("status", "DRAFT"), masked_info=masked_info_list
-                    )
-        except Exception as e:
-            logger.error(f"[bulk_analyze] Bulk extract error for type {ttype}: {e}")
-            for idx, _, _ in titems:
-                errors.append({"index": idx, "error": str(e)})
-                
-    # 순서대로 리스트 조립 (Flatten arrays if multiple items detected)
-    for i in range(len(request.items)):
-        if i in results_map:
-            val = results_map[i]
-            if isinstance(val, list):
-                results.extend(val)
-            else:
-                results.append(val)
+    results_by_index: dict[int, list[AnalyzeResponse]] = {}
+    errors: list[dict] = []
 
-    print(f"DEBUG: returning {len(results)} results, errors: {errors}"); return BatchAnalyzeResponse(
+    # 동시 스레드 수는 최대 5개로 병렬 처리 (서버 부하 및 OpenAI Rate Limit 최적화)
+    max_workers = min(5, len(request.items))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_idx = {
+            executor.submit(_process_batch_item, idx, item): idx
+            for idx, item in enumerate(request.items)
+        }
+        for future in as_completed(future_to_idx):
+            idx, res_list, err = future.result()
+            if err:
+                errors.append({"index": idx, "error": err})
+            elif res_list:
+                results_by_index[idx] = res_list
+
+    # 원본 요청 인덱스(0, 1, 2...) 순서대로 결과 리스트 정렬 조립
+    results: list[AnalyzeResponse] = []
+    for i in range(len(request.items)):
+        if i in results_by_index:
+            results.extend(results_by_index[i])
+
+    logger.info(f"[analyze_batch] 완료: 성공 {len(results)}건, 실패 {len(errors)}건")
+    return BatchAnalyzeResponse(
         total=len(request.items),
         success=len(results),
         failed=len(errors),
