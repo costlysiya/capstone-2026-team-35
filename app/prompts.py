@@ -110,9 +110,10 @@ SCHEDULE_PROMPT = """당신은 일정·기한·예약 정보를 정밀하게 추
 아래 OCR 텍스트에서 다음 필드를 추출하세요.
 
 ## 필수 필드
-- title: 일정/기프티콘/예약 이름 (예: "스타벅스 아메리카노 T", "KTX 서울→부산")
-- expires_at: 만료일/종료일 (YYYY-MM-DD 형식). 없으면 null
-- start_at: 시작일/예약일/출발일 (YYYY-MM-DD 형식). 없으면 null
+- title: 일정/기프티콘/예약 이름 (예: "스타벅스 아메리카노 T", "KTX 서울→부산", "신라스테이 해운대")
+- start_at: 시작일/예약일/출발일/체크인일 (YYYY-MM-DD 형식). 없으면 null
+- end_at: 종료일/도착일/체크아웃일 (YYYY-MM-DD 형식). 없으면 null
+- expires_at: 만료일/유효기간 (기프티콘, 쿠폰, 멤버십 만료 등). 없으면 null
 
 ## 선택 필드
 - start_time: 시작 시각 (HH:MM 24시간제). 없으면 null
@@ -127,15 +128,18 @@ SCHEDULE_PROMPT = """당신은 일정·기한·예약 정보를 정밀하게 추
 ## 날짜 변환 규칙
 - "24.08.15", "24/08/15" → "2024-08-15" (두 자리 연도는 20을 붙여 4자리로 변환)
 - "8월 15일" → 현재 연도(예: 2024) 기준으로 "2024-08-15" (절대 YYYY 등 알파벳을 그대로 쓰지 말고 실제 4자리 숫자로 변환)
+- ⚠️ OCR 연도 오인식 자동 복원: OCR 텍스트에서 '224년', '024년' 등 연도가 3자리로 잘못 읽히거나 깨진 경우, 문맥과 현재 연도를 참고하여 반드시 정상적인 4자리 연도(예: '2024')로 자동 복원하세요.
 - "내일", "모레", "다음주 월요일" → 구체적 날짜 변환이 불가하면 원문 그대로 기록
-- "관람일", "예약일", "시작일", "출발", "탑승" 뒤의 실제 이벤트 날짜 → start_at
-- "~까지", "유효기간", "만료일" (기프티콘, 구독 등 혜택 만료) 뒤의 날짜 → expires_at
-- "취소마감", "환불가능" 뒤의 날짜 → cancellation_deadline (절대 start_at이나 expires_at에 넣지 말 것)
+- "체크인", "입실", "시작일", "출발", "탑승", "관람일", "예약일" 뒤의 실제 이벤트 시작 날짜 → start_at
+- "체크아웃", "퇴실", "종료일", "도착" 뒤의 실제 이벤트 종료 날짜 또는 기간 일정("~부터 ~까지")의 끝 날짜 → end_at
+- ⚠️ 호텔/숙소/펜션 예약: 체크인은 start_at에, 체크아웃은 반드시 end_at에 단일 일정 객체로 함께 기입하세요. (절대로 체크인과 체크아웃을 별개의 2개 일정으로 쪼개지 마세요.)
+- "~까지", "유효기간", "만료일" (기프티콘, 구독, 쿠폰 등 혜택 만료) 뒤의 날짜 → expires_at
+- "취소마감", "환불가능" 뒤의 날짜 → cancellation_deadline (절대 start_at이나 expires_at, end_at에 넣지 말 것)
 
 ## 세부 분류(sub_type) 판단
 - 기프티콘/모바일쿠폰 → GIFTICON (reminder_days: [7, 3, 1] 자동 추천)
-- 사람과의 약속/미팅 → APPOINTMENT
-- KTX/영화/공연 티켓 → TICKET
+- 사람과의 약속/미팅/숙소 예약 → APPOINTMENT
+- KTX/영화/공연 티켓/항공권 → TICKET
 - 구독 서비스 만료 → SUBSCRIPTION (reminder_days: [30, 7, 1] 자동 추천)
 - 시험/마감/접수 → DEADLINE (reminder_days: [14, 7, 3, 1] 자동 추천)
 - 택배/배송 → DELIVERY (reminder_days: [1] 자동 추천)
@@ -147,11 +151,13 @@ SCHEDULE_PROMPT = """당신은 일정·기한·예약 정보를 정밀하게 추
 
 ## Few-Shot 예제 (모범 답안)
 - 입력: "[스타벅스] 아이스 아메리카노 T\n교환처: 스타벅스 전매장\n유효기간: 2024년 12월 31일"
-  응답: {"fields": {"title": "아이스 아메리카노 T", "expires_at": "2024-12-31", "start_at": null, "exchange_place": "스타벅스 전매장", "sub_type": "GIFTICON"}, "missing_fields": []}
+  응답: {"fields": {"title": "아이스 아메리카노 T", "expires_at": "2024-12-31", "start_at": null, "end_at": null, "exchange_place": "스타벅스 전매장", "sub_type": "GIFTICON"}, "missing_fields": []}
 - 입력: "다음주 목요일 오후 3시 팀 회의"
-  응답: {"fields": {"title": "팀 회의", "expires_at": null, "start_at": "다음주 목요일", "start_time": "15:00", "sub_type": "APPOINTMENT"}, "missing_fields": []}
+  응답: {"fields": {"title": "팀 회의", "expires_at": null, "start_at": "다음주 목요일", "end_at": null, "start_time": "15:00", "sub_type": "APPOINTMENT"}, "missing_fields": []}
+- 입력: "[야놀자] 신라스테이 해운대 예약완료\n체크인: 2024.08.20 (화) 15:00\n체크아웃: 2024.08.22 (목) 11:00"
+  응답: {"fields": {"title": "신라스테이 해운대", "start_at": "2024-08-20", "end_at": "2024-08-22", "start_time": "15:00", "end_time": "11:00", "expires_at": null, "sub_type": "APPOINTMENT"}, "missing_fields": []}
 - 입력: "넷플릭스 프리미엄 결제일 2024.11.01"
-  응답: {"fields": [{"title": "넷플릭스 프리미엄", "expires_at": "2024-11-01", "start_at": null, "recurrence": "매월", "sub_type": "SUBSCRIPTION"}], "missing_fields": []}
+  응답: {"fields": [{"title": "넷플릭스 프리미엄", "expires_at": "2024-11-01", "start_at": null, "end_at": null, "recurrence": "매월", "sub_type": "SUBSCRIPTION"}], "missing_fields": []}
 """
 
 PLACE_PROMPT = """당신은 장소·지도·위치 정보를 정밀하게 추출하는 AI입니다.
