@@ -305,6 +305,32 @@ final selectedDayProvider = StateProvider<DateTime?>((ref) => null);
 final isSelectModeProvider = StateProvider<bool>((ref) => false);
 final selectedCardsIdsProvider = StateProvider<Set<int>>((ref) => {});
 
+// 지역 정규화 헬퍼 함수 (부산 해운대구 오인식, 경상남도→경남 등 처리)
+String getStandardRegion(String addressOrRegion) {
+  final text = addressOrRegion.trim();
+  // 1. 부산 (해운대구 오인식 방지를 위해 대구보다 반드시 먼저 검사!)
+  if (text.contains('부산') || text.contains('해운대')) return '부산';
+  // 2. 대구 (해운대구를 위에서 먼저 걸러냈으므로 안전)
+  if (text.contains('대구')) return '대구';
+  // 3. 경남 / 경북 (풀네임과 줄임말 모두 처리)
+  if (text.contains('경남') || text.contains('경상남도')) return '경남';
+  if (text.contains('경북') || text.contains('경상북도')) return '경북';
+  // 4. 전라 / 충청
+  if (text.contains('전라') || text.contains('전남') || text.contains('전북')) return '전라';
+  if (text.contains('충청') || text.contains('충남') || text.contains('충북')) return '충청';
+  // 5. 기타 주요 광역 지자체
+  if (text.contains('서울')) return '서울';
+  if (text.contains('인천')) return '인천';
+  if (text.contains('광주') && !text.contains('경기 광주')) return '광주';
+  if (text.contains('대전')) return '대전';
+  if (text.contains('울산')) return '울산';
+  if (text.contains('경기')) return '경기';
+  if (text.contains('강원')) return '강원';
+  if (text.contains('제주')) return '제주';
+  if (text.contains('해외')) return '해외';
+  return '기타';
+}
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -3378,7 +3404,7 @@ class HomeScreen extends ConsumerWidget {
                                         final extra = (c['extraInfo'] ?? '').toString();
                                         bool regionMatched = false;
                                         for (String r in region) {
-                                          if (extra.contains(r)) {
+                                          if (getStandardRegion(extra) == r) {
                                             regionMatched = true;
                                             break;
                                           }
@@ -3532,7 +3558,7 @@ class HomeScreen extends ConsumerWidget {
                                                                 itemCount: allRegions.length,
                                                                 itemBuilder: (context, index) {
                                                                   final region = allRegions[index];
-                                                                  final count = savedCards.where((c) => c['categoryId'] == 1 && (c['extraInfo'] ?? '').toString().contains(region)).length;
+                                                                  final count = savedCards.where((c) => c['categoryId'] == 1 && getStandardRegion((c['extraInfo'] ?? '').toString()) == region).length;
                                                                   return CheckboxListTile(
                                                                     title: Text('$region ($count)', style: const TextStyle(fontSize: 14)),
                                                                     value: currentSelected.contains(region),
@@ -3845,7 +3871,7 @@ class HomeScreen extends ConsumerWidget {
                                         final extra = (c['extraInfo'] ?? '').toString();
                                         bool regionMatched = false;
                                         for (String r in region) {
-                                          if (extra.contains(r)) {
+                                          if (getStandardRegion(extra) == r) {
                                             regionMatched = true;
                                             break;
                                           }
