@@ -110,7 +110,7 @@ SCHEDULE_PROMPT = """당신은 일정·기한·예약 정보를 정밀하게 추
 아래 OCR 텍스트에서 다음 필드를 추출하세요.
 
 ## 필수 필드
-- title: 일정/기프티콘/예약 이름 (예: "스타벅스 아메리카노 T", "KTX 서울→부산", "신라스테이 해운대")
+- title: 일정/기프티콘/예약 이름 (원문에 등장하는 상품명이나 일정명을 정확히 추출)
 - start_at: 시작일/예약일/출발일/체크인일 (YYYY-MM-DD 형식). 없으면 null
 - end_at: 종료일/도착일/체크아웃일 (YYYY-MM-DD 형식). 없으면 null
 - expires_at: 만료일/유효기간 (기프티콘, 쿠폰, 멤버십 만료 등). 없으면 null
@@ -119,11 +119,16 @@ SCHEDULE_PROMPT = """당신은 일정·기한·예약 정보를 정밀하게 추
 - start_time: 시작 시각 (HH:MM 24시간제). 없으면 null
 - end_time: 종료 시각 (HH:MM 24시간제). 없으면 null
 - reminder_days: 알림 추천 일수 리스트 (예: [7, 3, 1] → D-7, D-3, D-1)
-- exchange_place: 교환처/사용처/장소 (⚠️ 절대 주의: 원문에 명시된 실제 상호/브랜드명(예: 도미노피자, 이디야, CU 등)만 정확히 추출하세요. 원문에 없으면 절대 '스타벅스' 등을 지어내지 말고 null로 설정)
+- exchange_place: 교환처/사용처/장소 (⚠️ 절대 원문 텍스트에 직접 명시된 상호/브랜드명만 그대로 추출하세요. 원문에 브랜드명이 없으면 절대 임의로 지어내지 말고 null로 설정하세요.)
 - participants: 참여자 (대화에서 추출 가능할 경우, 리스트)
 - recurrence: 반복 주기 ("매주", "매월", "매년" 등). 없으면 null
 - cancellation_deadline: 취소/환불 마감일시 (YYYY-MM-DD HH:MM 형식). 없으면 null
 - sub_type: 세부 분류 ("GIFTICON"|"APPOINTMENT"|"TICKET"|"SUBSCRIPTION"|"DEADLINE"|"DELIVERY")
+
+## ⚠️ 환각(Hallucination) 및 브랜드 오염 방지 규칙 (매우 중요)
+- 원문 텍스트에 명시된 내용만 추출하세요. 절대로 예시나 다른 사진의 상호명을 가져다 쓰지 마세요.
+- 원문 텍스트에서 상호명(굽네치킨, 배스킨라빈스, 이디야, 투썸, BBQ 등)이 보이면 그 상호명을 정확히 exchange_place와 title에 반영하세요.
+- 원문에 교환처가 없으면 exchange_place는 null이어야 합니다.
 
 ## 날짜 변환 규칙
 - "24.08.15", "24/08/15" → "2024-08-15" (두 자리 연도는 20을 붙여 4자리로 변환)
@@ -150,10 +155,8 @@ SCHEDULE_PROMPT = """당신은 일정·기한·예약 정보를 정밀하게 추
 - "토요일 2시", "내일 저녁" 등 상대적 시간 표현은 그대로 기록
 
 ## Few-Shot 예제 (모범 답안)
-- 입력: "[스타벅스] 아이스 아메리카노 T\n교환처: 스타벅스 전매장\n유효기간: 2024년 12월 31일"
-  응답: {"fields": {"title": "아이스 아메리카노 T", "expires_at": "2024-12-31", "start_at": null, "end_at": null, "exchange_place": "스타벅스 전매장", "sub_type": "GIFTICON"}, "missing_fields": []}
-- 입력: "[도미노피자] 포테이토 피자 M\n사용처: 도미노피자 전국 매장\n사용기한: 2024.11.20"
-  응답: {"fields": {"title": "포테이토 피자 M", "expires_at": "2024-11-20", "start_at": null, "end_at": null, "exchange_place": "도미노피자 전국 매장", "sub_type": "GIFTICON"}, "missing_fields": []}
+- 입력: "[모바일교환권] 굽네치킨 고추바사삭 + 콜라 1.25L\n교환처: 굽네치킨\n유효기간: 2024년 12월 31일"
+  응답: {"fields": {"title": "고추바사삭 + 콜라 1.25L", "expires_at": "2024-12-31", "start_at": null, "end_at": null, "exchange_place": "굽네치킨", "sub_type": "GIFTICON"}, "missing_fields": []}
 - 입력: "다음주 목요일 오후 3시 팀 회의"
   응답: {"fields": {"title": "팀 회의", "expires_at": null, "start_at": "다음주 목요일", "end_at": null, "start_time": "15:00", "sub_type": "APPOINTMENT"}, "missing_fields": []}
 - 입력: "[야놀자] 신라스테이 해운대 예약완료\n체크인: 2024.08.20 (화) 15:00\n체크아웃: 2024.08.22 (목) 11:00"
@@ -184,7 +187,7 @@ PLACE_PROMPT = """당신은 장소·지도·위치 정보를 정밀하게 추출
 아래 OCR 텍스트에서 다음 필드를 추출하세요.
 
 ## 각 장소별 필수 필드 (하나 이상 반드시 추출)
-- name: 상호명 / 장소명 (예: "을지다락", "스타벅스 강남역점")
+- name: 상호명 / 장소명 (원문에 명시된 상호명/장소명을 정확히 추출. 없는 상호를 지어내지 말 것)
 - region: 지역 (예: "서울 을지로", "부산 서면", "제주 애월")
 
 ## 각 장소별 선택 필드

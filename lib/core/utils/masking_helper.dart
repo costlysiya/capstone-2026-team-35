@@ -179,12 +179,12 @@ class MaskingHelper {
     text = _cleanStatusBar(text);
     if (text.trim().isEmpty) return text;
 
-    final isGifticonText = _containsKeywords(text, ['기프티콘', '쿠폰', '바코드', '교환권', '모바일상품권', '모바일쿠폰', '선물하기', '교환처']) &&
-        _containsKeywords(text, ['유효기간', '사용기한', '유효', '기한', '기간', '까지', '만료']);
-
-    if (isGifticonText) {
-      return _normalizeGifticon(text);
-    }
+    // ⚠️ 기프티콘 원본 텍스트 절단 방지:
+    // _normalizeGifticon()으로 텍스트를 3줄로 임의 축약하면 원본의 상호명/상품명이 잘려나가
+    // LLM이 원본을 보지 못하고 예제(스타벅스, 도미노피자 등)를 환각하는 치명적인 버그가 발생하므로,
+    // 원본 OCR 텍스트 전체를 보존하여 LLM에 전달하도록 합니다.
+    // final isGifticonText = ...
+    // if (isGifticonText) return _normalizeGifticon(text);
 
     // 1. Identify document types by scanning the whole text
     // 여권 단어 외에도 하단 판독 영역의 '<' 패턴이 발견되면 여권으로 인식하도록 함
