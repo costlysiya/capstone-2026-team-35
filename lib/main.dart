@@ -1422,7 +1422,7 @@ class HomeScreen extends ConsumerWidget {
     ref.read(selectedImagesProvider.notifier).state = {};
 
     final total = selected.length;
-    ref.read(serverProgressProvider.notifier).state = '🌐 서버 분석 중 (다중 입력 일괄 처리 진행 중...)';
+    ref.read(serverProgressProvider.notifier).state = '🌐 서버 분석 0% 완료...';
 
     final dio = Dio();
     const serverUrl = 'http://44.195.33.82:8000/api/analyze/batch';
@@ -1612,6 +1612,11 @@ class HomeScreen extends ConsumerWidget {
           _updateDraftError(ref, path, '통신 오류: $e');
         }
       }
+
+      // 청크 완료 후 진행률 업데이트
+      final processed = (i + chunk.length).clamp(0, total);
+      final percent = (processed / total * 100).round();
+      ref.read(serverProgressProvider.notifier).state = '🌐 서버 분석 $percent% 완료...';
     }
     final images = ref.read(pickedImagesProvider);
     final activeIndex = ref.read(activeImageIndexProvider);
