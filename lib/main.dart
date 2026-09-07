@@ -4199,13 +4199,13 @@ class MemoDynamicUIWidget extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.purple.shade100),
+                border: Border.all(color: SoseangTheme.memoDark.withOpacity(0.4)),
                 borderRadius: BorderRadius.circular(8),
-                color: Colors.purple.shade50,
+                color: SoseangTheme.memoColor.withOpacity(0.3),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.book, color: Colors.purple, size: 28),
+                  const Icon(Icons.book, color: SoseangTheme.memoDark, size: 28),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -4219,7 +4219,7 @@ class MemoDynamicUIWidget extends StatelessWidget {
                           children: [
                             if (platform.isNotEmpty) _buildBadge(platform, Colors.blue),
                             if (genre.isNotEmpty) _buildBadge(genre, Colors.pink),
-                            if (chapter.isNotEmpty) _buildBadge(chapter, Colors.purple),
+                            if (chapter.isNotEmpty) _buildBadge(chapter, SoseangTheme.memoDark),
                           ],
                         ),
                       ],
@@ -4233,8 +4233,8 @@ class MemoDynamicUIWidget extends StatelessWidget {
                 margin: const EdgeInsets.only(top: 16),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  border: Border(left: BorderSide(color: Colors.purple.shade200, width: 4)),
-                  color: Colors.purple.withValues(alpha: 0.05),
+                  border: Border(left: BorderSide(color: SoseangTheme.memoDark.withOpacity(0.4), width: 4)),
+                  color: SoseangTheme.memoDark.withOpacity(0.05),
                 ),
                 child: Text('"$excerpt"', style: const TextStyle(fontStyle: FontStyle.italic, height: 1.5, color: Colors.black87)),
               ),
