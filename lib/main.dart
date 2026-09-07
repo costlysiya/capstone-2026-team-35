@@ -736,6 +736,28 @@ class HomeScreen extends ConsumerWidget {
       }
 
       final addedAssets = assets.take(availableSlots).toList();
+
+      // 선택한 사진이 남은 슬롯보다 많으면 팝업 알림
+      if (assets.length > availableSlots) {
+        if (context.mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('최대 20장 제한'),
+              content: Text(
+                '대기실에는 최대 20장까지만 추가할 수 있어요.\n'
+                '현재 ${currentList.length}장이 있어 ${availableSlots}장만 추가되었습니다.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('확인'),
+                ),
+              ],
+            ),
+          );
+        }
+      }
       List<XFile> addedList = [];
       final cache = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
       
@@ -1422,7 +1444,7 @@ class HomeScreen extends ConsumerWidget {
     ref.read(selectedImagesProvider.notifier).state = {};
 
     final total = selected.length;
-    ref.read(serverProgressProvider.notifier).state = '🌐 서버 분석 0% 완료...';
+    ref.read(serverProgressProvider.notifier).state = '🌐 서버 분석 진행중...';
 
     final dio = Dio();
     const serverUrl = 'http://44.195.33.82:8000/api/analyze/batch';
@@ -1614,9 +1636,6 @@ class HomeScreen extends ConsumerWidget {
       }
 
       // 청크 완료 후 진행률 업데이트
-      final processed = (i + chunk.length).clamp(0, total);
-      final percent = (processed / total * 100).round();
-      ref.read(serverProgressProvider.notifier).state = '🌐 서버 분석 $percent% 완료...';
     }
     final images = ref.read(pickedImagesProvider);
     final activeIndex = ref.read(activeImageIndexProvider);
