@@ -1613,6 +1613,11 @@ class HomeScreen extends ConsumerWidget {
         }
       }
     }
+    final images = ref.read(pickedImagesProvider);
+    final activeIndex = ref.read(activeImageIndexProvider);
+    if (images.isNotEmpty && activeIndex < images.length) {
+      _loadDraftToUI(ref, images[activeIndex].path);
+    }
 
     ref.read(serverProgressProvider.notifier).state = '✅ 서버 분석 완료 ($total장)';
     Future.delayed(const Duration(seconds: 3), () {
