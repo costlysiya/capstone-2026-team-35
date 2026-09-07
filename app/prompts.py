@@ -119,7 +119,7 @@ SCHEDULE_PROMPT = """당신은 일정·기한·예약 정보를 정밀하게 추
 - start_time: 시작 시각 (HH:MM 24시간제). 없으면 null
 - end_time: 종료 시각 (HH:MM 24시간제). 없으면 null
 - reminder_days: 알림 추천 일수 리스트 (예: [7, 3, 1] → D-7, D-3, D-1)
-- exchange_place: 교환처/사용처/장소
+- exchange_place: 교환처/사용처/장소 (⚠️ 절대 주의: 원문에 명시된 실제 상호/브랜드명(예: 도미노피자, 이디야, CU 등)만 정확히 추출하세요. 원문에 없으면 절대 '스타벅스' 등을 지어내지 말고 null로 설정)
 - participants: 참여자 (대화에서 추출 가능할 경우, 리스트)
 - recurrence: 반복 주기 ("매주", "매월", "매년" 등). 없으면 null
 - cancellation_deadline: 취소/환불 마감일시 (YYYY-MM-DD HH:MM 형식). 없으면 null
@@ -133,11 +133,11 @@ SCHEDULE_PROMPT = """당신은 일정·기한·예약 정보를 정밀하게 추
 - "체크인", "입실", "시작일", "출발", "탑승", "관람일", "예약일" 뒤의 실제 이벤트 시작 날짜 → start_at
 - "체크아웃", "퇴실", "종료일", "도착" 뒤의 실제 이벤트 종료 날짜 또는 기간 일정("~부터 ~까지")의 끝 날짜 → end_at
 - ⚠️ 호텔/숙소/펜션 예약: 체크인은 start_at에, 체크아웃은 반드시 end_at에 단일 일정 객체로 함께 기입하세요. (절대로 체크인과 체크아웃을 별개의 2개 일정으로 쪼개지 마세요.)
-- "~까지", "유효기간", "만료일" (기프티콘, 구독, 쿠폰 등 혜택 만료) 뒤의 날짜 → expires_at
+- "~까지", "유효기간", "만료일", "사용기한" (기프티콘, 구독, 쿠폰 등 혜택 만료) 뒤의 날짜 → 반드시 expires_at (절대 start_at에 넣지 말 것)
 - "취소마감", "환불가능" 뒤의 날짜 → cancellation_deadline (절대 start_at이나 expires_at, end_at에 넣지 말 것)
 
 ## 세부 분류(sub_type) 판단
-- 기프티콘/모바일쿠폰 → GIFTICON (reminder_days: [7, 3, 1] 자동 추천)
+- ⚠️ 기프티콘/모바일쿠폰/교환권/모바일상품권 ("쿠폰", "바코드", "교환권", "사용기한", "유효기간", "선물하기", "교환처" 등이 포함된 모든 상품권류) → 반드시 sub_type: "GIFTICON" (reminder_days: [7, 3, 1] 자동 추천)
 - 사람과의 약속/미팅/숙소 예약 → APPOINTMENT
 - KTX/영화/공연 티켓/항공권 → TICKET
 - 구독 서비스 만료 → SUBSCRIPTION (reminder_days: [30, 7, 1] 자동 추천)
@@ -152,6 +152,8 @@ SCHEDULE_PROMPT = """당신은 일정·기한·예약 정보를 정밀하게 추
 ## Few-Shot 예제 (모범 답안)
 - 입력: "[스타벅스] 아이스 아메리카노 T\n교환처: 스타벅스 전매장\n유효기간: 2024년 12월 31일"
   응답: {"fields": {"title": "아이스 아메리카노 T", "expires_at": "2024-12-31", "start_at": null, "end_at": null, "exchange_place": "스타벅스 전매장", "sub_type": "GIFTICON"}, "missing_fields": []}
+- 입력: "[도미노피자] 포테이토 피자 M\n사용처: 도미노피자 전국 매장\n사용기한: 2024.11.20"
+  응답: {"fields": {"title": "포테이토 피자 M", "expires_at": "2024-11-20", "start_at": null, "end_at": null, "exchange_place": "도미노피자 전국 매장", "sub_type": "GIFTICON"}, "missing_fields": []}
 - 입력: "다음주 목요일 오후 3시 팀 회의"
   응답: {"fields": {"title": "팀 회의", "expires_at": null, "start_at": "다음주 목요일", "end_at": null, "start_time": "15:00", "sub_type": "APPOINTMENT"}, "missing_fields": []}
 - 입력: "[야놀자] 신라스테이 해운대 예약완료\n체크인: 2024.08.20 (화) 15:00\n체크아웃: 2024.08.22 (목) 11:00"

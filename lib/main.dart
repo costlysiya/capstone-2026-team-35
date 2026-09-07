@@ -1487,7 +1487,7 @@ class HomeScreen extends ConsumerWidget {
     };
     final now = DateTime.now();
     final dateContextStr = '[현재 날짜: ${now.year}년 ${now.month}월 ${now.day}일]\n';
-    const promptHint = "[시스템 지시: 1. OCR 오인식은 교정하되 임의로 지어내지 말 것. 2. `[ENC:...` 형태로 된 문자열은 민감 정보가 암호화된 값임. 절대 이 문자열의 내용을 해석하거나 '암호화됨' 등의 말로 바꾸지 말고, `[ENC:...` 형태의 원본 문자열 그대로를 JSON 항목 값으로 넣을 것. 3. 호텔/숙소 예약, 티켓 등 하나의 연결된 일정은 여러 항목으로 분리하지 말고 단일 일정 객체 안에 `start_at`, `end_at`을 포함할 것. 4. 티켓의 '관람일(일시)'은 반드시 `start_at`에 기입할 것. 5. '취소마감일시'는 절대 `start_at`, `end_at`, `expires_at` 등 날짜 필드에 넣지 말고 무시하거나 `content`에만 넣을 것.]\n\n";
+    const promptHint = "[시스템 지시: 1. OCR 오인식은 교정하되 임의로 지어내지 말 것. 2. `[ENC:...` 형태로 된 문자열은 민감 정보가 암호화된 값임. 절대 이 문자열의 내용을 해석하거나 '암호화됨' 등의 말로 바꾸지 말고, `[ENC:...` 형태의 원본 문자열 그대로를 JSON 항목 값으로 넣을 것. 3. 호텔/숙소 예약, 티켓 등 하나의 연결된 일정은 여러 항목으로 분리하지 말고 단일 일정 객체 안에 `start_at`, `end_at`을 포함할 것. 4. 티켓의 '관람일(일시)'은 반드시 `start_at`에 기입할 것. 5. '취소마감일시'는 절대 `start_at`, `end_at`, `expires_at` 등 날짜 필드에 넣지 말고 무시하거나 `content`에만 넣을 것. 6. 기프티콘/쿠폰/교환권은 sub_type을 'GIFTICON'으로, 유효기간은 `expires_at`에, 교환처는 원문에 명시된 브랜드명만 `exchange_place`에 넣고 없을 시 임의로 지어내지 말 것.]\n\n";
 
     // 20장 단위로 청크 분할하여 요청
     for (int i = 0; i < selected.length; i += 20) {
@@ -1595,10 +1595,48 @@ class HomeScreen extends ConsumerWidget {
               }
 
               if (newCategory == 0) {
-                newTitle = itemFields['schedule_name'] ?? itemFields['title'] ?? '새로운 일정';
-                newSchedule = itemFields['start_at']?.toString();
-                newScheduleEnd = itemFields['end_at']?.toString();
+                final subType = itemFields['sub_type'] as String?;
+                final isGifticon = subType == 'GIFTICON' || draft.subCategory == 1;
+                subCategoryIndex = isGifticon ? 1 : 0;
+
+                newTitle = itemFields['schedule_name'] ?? itemFields['title'] ?? (isGifticon ? '새로운 기프티콘' : '새로운 일정');
+                
+                final expiryDate = itemFields['expires_at'] as String?;
+                final startDate = itemFields['start_at'] as String?;
+                if (subCategoryIndex == 1) {
+                  newSchedule = (expiryDate != null && expiryDate.isNotEmpty) ? expiryDate : (startDate ?? draft.scheduleDate);
+                } else {
+                  newSchedule = (startDate != null && startDate.isNotEmpty) ? startDate : (expiryDate ?? draft.scheduleDate);
+                }
+
+                final endAt = itemFields['end_at'] as String?;
+                final endTime = itemFields['end_time'] as String?;
+                final startTime = itemFields['start_time'] as String?;
+
+                if (endAt != null && (endAt.contains('-') || endAt.contains('/'))) {
+                  newScheduleEnd = endAt;
+                } else if (endTime != null && (endTime.contains('-') || endTime.contains('/'))) {
+                  newScheduleEnd = endTime;
+                }
+
+                final exchangePlace = itemFields['exchange_place'] as String? ?? itemFields['location'] as String?;
+                if (exchangePlace != null && exchangePlace.trim().isNotEmpty) {
+                  newPlace = exchangePlace.trim();
+                }
+
                 newContent = itemFields['content'] ?? itemFields['memo'] ?? itemFields['description'] ?? '';
+
+                List<String> timeParts = [];
+                if (startTime != null && startTime.contains(':')) {
+                  timeParts.add('⏰ 시작 시간: $startTime');
+                }
+                if (endTime != null && endTime.contains(':') && !(endTime.contains('-') || endTime.contains('/'))) {
+                  timeParts.add('⏰ 종료 시간: $endTime');
+                }
+                if (timeParts.isNotEmpty) {
+                  final timeStr = timeParts.join(' / ');
+                  newContent = newContent.isEmpty ? timeStr : '$newContent\n$timeStr';
+                }
               } else if (newCategory == 1) {
                 newTitle = itemFields['name'] ?? itemFields['title'] ?? '새로운 장소';
                 newPlace = itemFields['address'] ?? itemFields['region'];
