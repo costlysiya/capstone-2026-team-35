@@ -4085,18 +4085,23 @@ class MemoDynamicUIWidget extends StatelessWidget {
   const MemoDynamicUIWidget({Key? key, required this.fields}) : super(key: key);
 
   Widget build(BuildContext context) {
-    final subType = fields['sub_type']?.toString();
-    final body = fields['body']?.toString() ?? fields['memo']?.toString() ?? fields['description']?.toString() ?? fields['content']?.toString();
-    final tags = fields['tags'];
+    Map<String, dynamic> targetFields = fields;
+    if (fields.containsKey('items') && fields['items'] is List && (fields['items'] as List).isNotEmpty) {
+      targetFields = (fields['items'] as List).first as Map<String, dynamic>;
+    }
+
+    final subType = targetFields['sub_type']?.toString();
+    final body = targetFields['body']?.toString() ?? targetFields['memo']?.toString() ?? targetFields['description']?.toString() ?? targetFields['content']?.toString() ?? '';
+    final tags = targetFields['tags'];
 
     Widget dynamicComponent = const SizedBox.shrink();
 
     switch (subType) {
       case 'RECIPE':
-        final cookTime = fields['cook_time']?.toString() ?? '';
-        final servings = fields['servings']?.toString() ?? '';
-        final ingredients = fields['ingredients'];
-        final steps = fields['steps'];
+        final cookTime = targetFields['cook_time']?.toString() ?? '';
+        final servings = targetFields['servings']?.toString() ?? '';
+        final ingredients = targetFields['ingredients'];
+        final steps = targetFields['steps'];
         dynamicComponent = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -4168,12 +4173,12 @@ class MemoDynamicUIWidget extends StatelessWidget {
         );
         break;
       case 'NOVEL':
-        final title = fields['book_title']?.toString() ?? '';
-        final author = fields['author']?.toString() ?? '';
-        final platform = fields['platform']?.toString() ?? '';
-        final chapter = fields['chapter']?.toString() ?? '';
-        final genre = fields['genre']?.toString() ?? '';
-        final excerpt = fields['excerpt']?.toString() ?? '';
+        final title = targetFields['book_title']?.toString() ?? '';
+        final author = targetFields['author']?.toString() ?? '';
+        final platform = targetFields['platform']?.toString() ?? '';
+        final chapter = targetFields['chapter']?.toString() ?? '';
+        final genre = targetFields['genre']?.toString() ?? '';
+        final excerpt = targetFields['excerpt']?.toString() ?? '';
         
         dynamicComponent = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -4225,9 +4230,9 @@ class MemoDynamicUIWidget extends StatelessWidget {
         break;
 
       case 'QR_CODE':
-        final val = fields['code_value']?.toString() ?? '';
-        final type = fields['code_type']?.toString() ?? '코드';
-        final label = fields['label']?.toString() ?? '';
+        final val = targetFields['code_value']?.toString() ?? '';
+        final type = targetFields['code_type']?.toString() ?? '코드';
+        final label = targetFields['label']?.toString() ?? '';
         dynamicComponent = Container(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
@@ -4244,9 +4249,9 @@ class MemoDynamicUIWidget extends StatelessWidget {
         );
         break;
       case 'ARTICLE':
-        final headline = fields['headline']?.toString() ?? '';
-        final publisher = fields['publisher']?.toString() ?? '';
-        final pubDate = fields['published_at']?.toString() ?? '';
+        final headline = targetFields['headline']?.toString() ?? '';
+        final publisher = targetFields['publisher']?.toString() ?? '';
+        final pubDate = targetFields['published_at']?.toString() ?? '';
         dynamicComponent = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
