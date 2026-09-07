@@ -125,8 +125,8 @@ SCHEDULE_PROMPT = """당신은 일정·기한·예약 정보를 정밀하게 추
 - sub_type: 세부 분류 ("GIFTICON"|"APPOINTMENT"|"TICKET"|"SUBSCRIPTION"|"DEADLINE"|"DELIVERY")
 
 ## 날짜 변환 규칙
-- "26.08.15", "26/08/15" → "2026-08-15"
-- "8월 15일" → 현재 연도 기준으로 "YYYY-08-15"
+- "24.08.15", "24/08/15" → "2024-08-15" (두 자리 연도는 20을 붙여 4자리로 변환)
+- "8월 15일" → 현재 연도(예: 2024) 기준으로 "2024-08-15" (절대 YYYY 등 알파벳을 그대로 쓰지 말고 실제 4자리 숫자로 변환)
 - "내일", "모레", "다음주 월요일" → 구체적 날짜 변환이 불가하면 원문 그대로 기록
 - "관람일", "예약일", "시작일", "출발", "탑승" 뒤의 실제 이벤트 날짜 → start_at
 - "~까지", "유효기간", "만료일" (기프티콘, 구독 등 혜택 만료) 뒤의 날짜 → expires_at
@@ -146,12 +146,12 @@ SCHEDULE_PROMPT = """당신은 일정·기한·예약 정보를 정밀하게 추
 - "토요일 2시", "내일 저녁" 등 상대적 시간 표현은 그대로 기록
 
 ## Few-Shot 예제 (모범 답안)
-- 입력: "[스타벅스] 아이스 아메리카노 T\n교환처: 스타벅스 전매장\n유효기간: 2026년 12월 31일"
-  응답: {"fields": {"title": "아이스 아메리카노 T", "expires_at": "2026-12-31", "start_at": null, "exchange_place": "스타벅스 전매장", "sub_type": "GIFTICON"}, "missing_fields": []}
+- 입력: "[스타벅스] 아이스 아메리카노 T\n교환처: 스타벅스 전매장\n유효기간: 2024년 12월 31일"
+  응답: {"fields": {"title": "아이스 아메리카노 T", "expires_at": "2024-12-31", "start_at": null, "exchange_place": "스타벅스 전매장", "sub_type": "GIFTICON"}, "missing_fields": []}
 - 입력: "다음주 목요일 오후 3시 팀 회의"
   응답: {"fields": {"title": "팀 회의", "expires_at": null, "start_at": "다음주 목요일", "start_time": "15:00", "sub_type": "APPOINTMENT"}, "missing_fields": []}
-- 입력: "넷플릭스 프리미엄 결제일 2026.11.01"
-  응답: {"fields": [{"title": "넷플릭스 프리미엄", "expires_at": "2026-11-01", "start_at": null, "recurrence": "매월", "sub_type": "SUBSCRIPTION"}], "missing_fields": []}
+- 입력: "넷플릭스 프리미엄 결제일 2024.11.01"
+  응답: {"fields": [{"title": "넷플릭스 프리미엄", "expires_at": "2024-11-01", "start_at": null, "recurrence": "매월", "sub_type": "SUBSCRIPTION"}], "missing_fields": []}
 """
 
 PLACE_PROMPT = """당신은 장소·지도·위치 정보를 정밀하게 추출하는 AI입니다.
