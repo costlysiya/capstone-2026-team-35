@@ -4677,7 +4677,7 @@ class DynamicFeaturesCard extends ConsumerWidget {
                                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: categoryColor),
                               )
                             : TextFormField(
-                                key: ValueKey('${currentIdx}_${entry.key}'),
+                                key: ValueKey('${activePath}_${currentIdx}_${entry.key}'),
                                 initialValue: displayValue,
                                 style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
                                 decoration: const InputDecoration(
@@ -4690,6 +4690,12 @@ class DynamicFeaturesCard extends ConsumerWidget {
                                     items[currentIdx][entry.key] = val;
                                   } else {
                                     fields![entry.key] = val;
+                                  }
+                                  final cache = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
+                                  final cur = cache[activePath];
+                                  if (cur != null) {
+                                    cache[activePath] = cur.copyWith(aiFields: fields);
+                                    ref.read(draftCacheProvider.notifier).state = cache;
                                   }
                                 },
                               ),
