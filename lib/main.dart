@@ -3462,7 +3462,13 @@ class HomeScreen extends ConsumerWidget {
                                         final title = (c['title'] ?? '').toString().toLowerCase();
                                         final content = (c['content'] ?? '').toString().toLowerCase();
                                         final extra = (c['extraInfo'] ?? '').toString().toLowerCase();
-                                        if (!title.contains(gSearchStr) && !content.contains(gSearchStr) && !extra.contains(gSearchStr)) return false;
+                                        
+                                        if (currentMenu == 'cat_2') {
+                                          // 위시리스트 보관함은 제목 기반으로만 검색
+                                          if (!title.contains(gSearchStr)) return false;
+                                        } else {
+                                          if (!title.contains(gSearchStr) && !content.contains(gSearchStr) && !extra.contains(gSearchStr)) return false;
+                                        }
                                       }
                                     }
 
@@ -3929,7 +3935,13 @@ class HomeScreen extends ConsumerWidget {
                                         final title = (c['title'] ?? '').toString().toLowerCase();
                                         final content = (c['content'] ?? '').toString().toLowerCase();
                                         final extra = (c['extraInfo'] ?? '').toString().toLowerCase();
-                                        if (!title.contains(gSearchStr) && !content.contains(gSearchStr) && !extra.contains(gSearchStr)) return false;
+                                        
+                                        if (currentMenu == 'cat_2') {
+                                          // 위시리스트 보관함은 제목 기반으로만 검색
+                                          if (!title.contains(gSearchStr)) return false;
+                                        } else {
+                                          if (!title.contains(gSearchStr) && !content.contains(gSearchStr) && !extra.contains(gSearchStr)) return false;
+                                        }
                                       }
                                     }
 
@@ -3996,7 +4008,13 @@ class HomeScreen extends ConsumerWidget {
                                         final title = (c['title'] ?? '').toString().toLowerCase();
                                         final content = (c['content'] ?? '').toString().toLowerCase();
                                         final extra = (c['extraInfo'] ?? '').toString().toLowerCase();
-                                        if (!title.contains(gSearchStr) && !content.contains(gSearchStr) && !extra.contains(gSearchStr)) return false;
+                                        
+                                        if (currentMenu == 'cat_2') {
+                                          // 위시리스트 보관함은 제목 기반으로만 검색
+                                          if (!title.contains(gSearchStr)) return false;
+                                        } else {
+                                          if (!title.contains(gSearchStr) && !content.contains(gSearchStr) && !extra.contains(gSearchStr)) return false;
+                                        }
                                       }
                                       
                                       if (subtypes.isNotEmpty) {
