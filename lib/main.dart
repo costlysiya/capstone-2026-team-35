@@ -2483,7 +2483,7 @@ class HomeScreen extends ConsumerWidget {
 
     final style = _getCategoryStyle(selectedCategory, subCategory: selectedCategory == 0 ? selectedSubCategory : 0);
 
-    String appBarTitle = '🌱 소생 - 대기실';
+    String appBarTitle = '대기실';
     if (currentMenu.startsWith('cat_0')) appBarTitle = '📅 일정 보관함';
     if (currentMenu == 'cat_1') appBarTitle = '📍 장소 보관함';
     if (currentMenu == 'cat_2') appBarTitle = '💝 위시 보관함';
@@ -2613,7 +2613,7 @@ class HomeScreen extends ConsumerWidget {
                                   ),
                                   child: const Center(
                                     child: Text(
-                                      '소생할 스크린샷들을 선택해 주세요.\n(이미지 고화질 줌인 장착)',
+                                      '정리할 스크린샷들을 선택해 주세요.',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(color: SoseangTheme.textMuted, fontSize: 13),
                                     ),
@@ -2625,7 +2625,7 @@ class HomeScreen extends ConsumerWidget {
                                   child: ElevatedButton.icon(
                                     onPressed: () => _pickMultiImages(context, ref),
                                     icon: const Icon(Icons.photo_library),
-                                    label: const Text('갤러리에서 사진 무더기로 가져오기'),
+                                    label: const Text('갤러리에서 사진 여러개 가져오기'),
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: SoseangTheme.scheduleDark,
                                       foregroundColor: Colors.white,
@@ -3906,7 +3906,7 @@ class HomeScreen extends ConsumerWidget {
                                       }
                                       
                                       if (region.isNotEmpty) {
-                                        final extra = (c['extraInfo'] ?? '').toString();
+                                       final extra = (c['extraInfo'] ?? '').toString();
                                         bool regionMatched = false;
                                         for (String r in region) {
                                           if (getStandardRegion(extra) == r) {
