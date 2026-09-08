@@ -2078,7 +2078,7 @@ class HomeScreen extends ConsumerWidget {
 
   bool _hasValidAiFields(Map<String, dynamic>? rawFields) {
     if (rawFields == null || rawFields.isEmpty) return false;
-    final excludeKeys = { 'title', 'name', 'product_name', 'start_at', 'expires_at', 'address', 'price_amount', 'items', 'body', 'keep_photo', 'map_ready', 'calendar_type', 'reminder_days', 'recurrence', 'confidence', 'status', 'id', 'missing_fields', 'masked_info', 'categoryId', 'subCategoryId', 'content', 'extraInfo' };
+    final excludeKeys = { 'title', 'name', 'product_name', 'start_at', 'expires_at', 'address', 'items', 'body', 'keep_photo', 'map_ready', 'calendar_type', 'reminder_days', 'recurrence', 'confidence', 'status', 'id', 'missing_fields', 'masked_info', 'categoryId', 'subCategoryId', 'content', 'extraInfo' };
     final Map<String, String> fieldLabels = { 'title': '제목', 'memo': '메모', 'sub_type': '세부 분류', 'start_at': '시작일', 'expires_at': '만료일', 'location': '장소', 'barcode_number': '바코드 번호', 'name': '상호명', 'category': '카테고리', 'address': '주소', 'region': '지역', 'product_name': '상품명', 'price_amount': '가격', 'brand_or_store': '브랜드/판매처', 'option': '옵션', 'url': '상품 링크', 'body': '본문', 'tags': '태그', 'original_price': '정가', 'discount_rate': '할인율', 'rating': '평점', 'hours': '영업시간', 'seller': '판매처', 'description': '설명', 'exchange_place': '교환처' };
     
     return rawFields.entries.any((entry) => !excludeKeys.contains(entry.key) && fieldLabels.containsKey(entry.key) && entry.value != null && entry.value.toString().trim().isNotEmpty);
@@ -2088,7 +2088,7 @@ class HomeScreen extends ConsumerWidget {
     final excludeKeys = {
       'title', 'name', 'product_name',
       'start_at', 'expires_at',
-      'address', 'price_amount',
+      'address',
       'items', 'body',
       'keep_photo', 'map_ready',
       'calendar_type', 'reminder_days',
@@ -2263,7 +2263,7 @@ class HomeScreen extends ConsumerWidget {
                                     'body': '본문', 'tags': '태그',
                                     'original_price': '정가', 'discount_rate': '할인율', 'rating': '평점', 'hours': '영업시간', 'seller': '판매처', 'description': '설명', 'exchange_place': '교환처',
                                   };
-                                  final excludeKeys = { 'title', 'name', 'product_name', 'start_at', 'expires_at', 'address', 'price_amount', 'items', 'body', 'keep_photo', 'map_ready', 'calendar_type', 'reminder_days', 'recurrence', 'confidence', 'status', 'id', 'missing_fields', 'masked_info', 'categoryId', 'subCategoryId', 'content', 'extraInfo' };
+                                  final excludeKeys = { 'title', 'name', 'product_name', 'start_at', 'expires_at', 'address', 'items', 'body', 'keep_photo', 'map_ready', 'calendar_type', 'reminder_days', 'recurrence', 'confidence', 'status', 'id', 'missing_fields', 'masked_info', 'categoryId', 'subCategoryId', 'content', 'extraInfo' };
 
                                   if (card['rawFields'] != null && (card['rawFields'] as Map).isNotEmpty) {
                                     for (var entry in (card['rawFields'] as Map).entries) {
@@ -4515,7 +4515,7 @@ class DynamicFeaturesCard extends ConsumerWidget {
       'title', 'name', 'product_name',       // 제목 칸
       'start_at', 'expires_at',               // 일정 날짜 칸
       'address',                              // 장소 주소 칸
-      'price_amount',                         // 가격 (위시 제목에 포함)
+      // 가격 제외 됨 (이제 표시함)
       // 시스템 내부 필드 (사용자에게 보여줄 필요 없음)
       'items', 'body',                        // 구조/원문
       'keep_photo', 'map_ready',              // 서버 지시 플래그
