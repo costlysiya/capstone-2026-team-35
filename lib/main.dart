@@ -1813,7 +1813,9 @@ class HomeScreen extends ConsumerWidget {
     if (categoryId == 0) extraInfo = ref.read(scheduleDateProvider).text;
     if (categoryId == 1) extraInfo = ref.read(placeLocationProvider).text;
     if (categoryId == 2) {
-      final curFields = cur.aiFields ?? {};
+      final activePath = images[activeIndex].path;
+      final activeDraft = ref.read(draftCacheProvider)[activePath];
+      final curFields = activeDraft?.aiFields ?? {};
       if (curFields.containsKey('items') && curFields['items'] is List && (curFields['items'] as List).isNotEmpty) {
         final safeIdx = ref.read(currentItemIndexProvider) < (curFields['items'] as List).length ? ref.read(currentItemIndexProvider) : 0;
         extraInfo = (curFields['items'][safeIdx]['price_amount'] ?? '').toString();
@@ -2331,7 +2333,6 @@ class HomeScreen extends ConsumerWidget {
                                                       prefixIcon: const Icon(Icons.calendar_today),
                                                     ),
                                                   )
-                                                else
                                                 else
                                                   TextField(
                                                     controller: extraCtrl, 
