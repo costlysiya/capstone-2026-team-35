@@ -287,10 +287,9 @@ final memoSubTypeProvider = StateProvider<String>((ref) => 'NOTE');           //
 final memoSubTypeFilterProvider = StateProvider<Set<String>>((ref) => {});    // 보관함 필터용
 final customSubTypesProvider = StateProvider<List<String>>((ref) => []);      // 사용자 정의 세부분류 목록
 
-const kDefaultMemoSubTypes = ['RECIPE', 'QR_CODE', 'NOVEL', 'CHECKLIST', 'ARTICLE', 'NOTE', 'OTHER'];
+const kDefaultMemoSubTypes = ['RECIPE', 'NOVEL', 'CHECKLIST', 'ARTICLE', 'NOTE', 'OTHER'];
 const kMemoSubTypeLabels = {
   'RECIPE': '레시피',
-  'QR_CODE': 'QR코드',
   'NOVEL': '소설/웹소설',
   'CHECKLIST': '체크리스트',
   'ARTICLE': '기사/아티클',
@@ -1655,12 +1654,11 @@ class HomeScreen extends ConsumerWidget {
                 
                 final subType = memoFields['sub_type'];
                 if (subType == 'RECIPE') subCategoryIndex = 0;
-                else if (subType == 'QR_CODE') subCategoryIndex = 1;
-                else if (subType == 'NOVEL') subCategoryIndex = 2;
-                else if (subType == 'CHECKLIST') subCategoryIndex = 3;
-                else if (subType == 'ARTICLE') subCategoryIndex = 4;
-                else if (subType == 'NOTE') subCategoryIndex = 5;
-                else if (subType == 'OTHER') subCategoryIndex = 6;
+                else if (subType == 'NOVEL') subCategoryIndex = 1;
+                else if (subType == 'CHECKLIST') subCategoryIndex = 2;
+                else if (subType == 'ARTICLE') subCategoryIndex = 3;
+                else if (subType == 'NOTE') subCategoryIndex = 4;
+                else if (subType == 'OTHER') subCategoryIndex = 5;
 
               }
               
@@ -4337,25 +4335,6 @@ class MemoDynamicUIWidget extends StatelessWidget {
         );
         break;
 
-      case 'QR_CODE':
-        final val = targetFields['code_value']?.toString() ?? '';
-        final type = targetFields['code_type']?.toString() ?? '코드';
-        final label = targetFields['label']?.toString() ?? '';
-        dynamicComponent = Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(12)),
-          child: Column(
-            children: [
-              Icon(type == 'QR' ? Icons.qr_code_2 : Icons.barcode_reader, size: 40, color: Colors.black54),
-              const SizedBox(height: 8),
-              if (label.isNotEmpty) Text(label, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black54)),
-              const SizedBox(height: 4),
-              SelectableText(val, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-            ],
-          ),
-        );
-        break;
       case 'ARTICLE':
         final headline = targetFields['headline']?.toString() ?? '';
         final publisher = targetFields['publisher']?.toString() ?? '';
