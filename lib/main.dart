@@ -2233,7 +2233,7 @@ class HomeScreen extends ConsumerWidget {
                               ? '⏳ 기프티콘 유효기간'
                               : card['categoryId'] == 0 ? '⏰ 일정 일시 설정'
                               : card['categoryId'] == 3 ? '🏷️ 세부 분류'
-                              : '🗺️ 장소 주소 및 명칭',
+                              : '📌 상세 정보',
                           style: const TextStyle(fontWeight: FontWeight.bold, color: SoseangTheme.textMuted, fontSize: 12),
                         ),
                         const SizedBox(height: 4),
