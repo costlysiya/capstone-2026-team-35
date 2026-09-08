@@ -1456,12 +1456,61 @@ class HomeScreen extends ConsumerWidget {
     }
   }
 
-  Future<void> _startBatchAIAnalysis(WidgetRef ref) async {
+  Future<void> _startBatchAIAnalysis(BuildContext context, WidgetRef ref) async {
     print("🚀 [DEBUG] _startBatchAIAnalysis CALLED!");
     final selected = ref.read(selectedImagesProvider).toList();
     if (selected.isEmpty) return;
 
     final cacheMap = Map<String, OcrDraft>.from(ref.read(draftCacheProvider));
+
+    // 1. 개인정보 패턴 감지 여부 판정 (일괄)
+    bool hasSensitive = false;
+    for (final path in selected) {
+      final draft = cacheMap[path];
+      if (draft != null && MaskingHelper.hasSensitivePatterns(draft.content)) {
+        hasSensitive = true;
+        break;
+      }
+    }
+
+    bool proceed = true;
+    if (hasSensitive) {
+      // 다이얼로그 팝업 창으로 전송 및 익명화 허가 여부 질문
+      proceed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          return AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.warning, color: Colors.orange),
+                SizedBox(width: 8),
+                Text('개인정보 포함 감지'),
+              ],
+            ),
+            content: const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('분석할 텍스트 내에 개인정보(주민등록번호, 카드 번호, 바코드 등)로 의심되는 패턴이 감지되었습니다.\n\nAI 분석 서버로 전송하여 자동 구조화 과정을 진행할까요?\n(보안 전송을 위해 민감 데이터는 서버 전송 전 기기 내에서 안전하게 일괄 암호화됩니다.)'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('취소', style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                child: const Text('암호화 후 전송'),
+              ),
+            ],
+          );
+        },
+      ) ?? false;
+    }
+
+    if (!proceed) return;
     
     // 준비 중인 이미지들의 상태를 'loading'으로 변경
     for (final path in selected) {
@@ -2827,7 +2876,7 @@ class HomeScreen extends ConsumerWidget {
                                   SizedBox(
                                     width: double.infinity,
                                     child: ElevatedButton.icon(
-                                      onPressed: () => _startBatchAIAnalysis(ref),
+                                      onPressed: () => _startBatchAIAnalysis(context, ref),
                                       icon: const Icon(Icons.auto_awesome),
                                       label: Text('선택 항목 AI 일괄 분석 (${selectedImages.length}장)'),
                                       style: ElevatedButton.styleFrom(
