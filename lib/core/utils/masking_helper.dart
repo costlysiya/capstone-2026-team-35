@@ -239,8 +239,8 @@ class MaskingHelper {
       });
 
       // --- 쿠폰 코드 (Coupon Code) ---
-      // Pattern: \b\d{12,16}\b (12~16자리 바코드 유연한 허용)
-      final couponRegex = RegExp(r'\b\d{12,16}\b');
+      // Pattern: \b(?:\d[-\s]?){11,15}\d\b (12~16자리 바코드 유연한 허용, 공백 포함)
+      final couponRegex = RegExp(r'\b(?:\d[-\s]?){11,15}\d\b');
       if (couponRegex.hasMatch(line)) {
         // Hybrid Matching: 주변에 바코드/쿠폰 키워드가 있을 때만 마스킹 (숫자 오탐지 방지)
         if (_containsKeywords(text, ['기프티콘', '쿠폰', '바코드', '교환권', '모바일상품권', '선물하기'])) {
@@ -269,7 +269,7 @@ class MaskingHelper {
       });
 
       // --- 예매/예약 번호 (Reservation/Ticket Number) ---
-      final reservationRegex = RegExp(r'(예매번호|예약번호|티켓번호|예매|예약|티켓)\s*[:\-]?\s*([A-Za-z0-9]{6,15})\b');
+      final reservationRegex = RegExp(r'(예매번호|예약번호|티켓번호|주문번호|승인번호|예매|예약|티켓|주문|승인)\s*[:\-]?\s*([A-Za-z0-9]{6,15})\b');
       line = line.replaceAllMapped(reservationRegex, (match) {
         final keyword = match.group(1)!;
         final resNum = match.group(2)!;
@@ -425,7 +425,7 @@ class MaskingHelper {
     }
 
     // --- 3.5. 예매/예약 번호 검사 ---
-    final reservationRegex = RegExp(r'(예매번호|예약번호|티켓번호|예매|예약|티켓)\s*[:\-]?\s*([A-Za-z0-9]{6,15})\b');
+    final reservationRegex = RegExp(r'(예매번호|예약번호|티켓번호|주문번호|승인번호|예매|예약|티켓|주문|승인)\s*[:\-]?\s*([A-Za-z0-9]{6,15})\b');
     if (reservationRegex.hasMatch(text)) {
       score += 5;
     }
@@ -463,7 +463,7 @@ class MaskingHelper {
     // --- 7. 기프티콘 / 쿠폰 컨텍스트 매칭 ---
     final hasGifticonKeywords = ['기프티콘', '쿠폰', '바코드', '교환권', '모바일상품권', '모바일쿠폰', '선물하기', '교환처'].any((k) => lowerText.contains(k));
     final hasExpiryKeywords = ['사용기한', '유효기간', '만료일', '까지'].any((k) => lowerText.contains(k));
-    final hasCouponNo = RegExp(r'\b\d{12}\b|\b\d{14}\b|\b\d{16}\b').hasMatch(text);
+    final hasCouponNo = RegExp(r'\b(?:\d[-\s]?){11,15}\d\b').hasMatch(text);
     final hasDatePattern = RegExp(r'\b(\d{2}|\d{4})[.\-/]\d{1,2}[.\-/]\d{1,2}\b').hasMatch(text) ||
                            RegExp(r'\b(\d{2}|\d{4})년\s?\d{1,2}월\s?\d{1,2}일\b').hasMatch(text);
 
@@ -518,7 +518,7 @@ class MaskingHelper {
     }
 
     // Reservation (예매/예약 번호)
-    final reservationRegex = RegExp(r'(예매번호|예약번호|티켓번호|예매|예약|티켓)\s*[:\-]?\s*([A-Za-z0-9]{6,15})\b');
+    final reservationRegex = RegExp(r'(예매번호|예약번호|티켓번호|주문번호|승인번호|예매|예약|티켓|주문|승인)\s*[:\-]?\s*([A-Za-z0-9]{6,15})\b');
     info['reservation']!.addAll(reservationRegex.allMatches(text).map((m) => m.group(2)!));
 
     // Passport (여권번호) - 여권 관련 키워드가 있을 경우에만 추출
@@ -534,7 +534,7 @@ class MaskingHelper {
     info['license']!.addAll(licenseRegex.allMatches(text).map((m) => m.group(0)!));
 
     // Coupon (기프티콘/바코드 등 쿠폰번호)
-    final couponRegex = RegExp(r'\b\d{12}\b|\b\d{14}\b|\b\d{16}\b');
+    final couponRegex = RegExp(r'\b(?:\d[-\s]?){11,15}\d\b');
     info['coupon']!.addAll(couponRegex.allMatches(text).map((m) => m.group(0)!));
 
     // 빈 리스트 제거
