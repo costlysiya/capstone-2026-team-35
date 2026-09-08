@@ -1548,6 +1548,9 @@ class HomeScreen extends ConsumerWidget {
         final localType = indexToType[draft.category] ?? 'MEMO';
         final maskedText = MaskingHelper.mask(draft.content);
         
+        // E2EE 로그 테스트 용도: 일괄 분석 시에도 암호화 확인
+        debugPrint('🔒 [소생 앱 일괄 분석] 서버 전송 전 암호화(마스킹) 완료 텍스트:\n$maskedText\n');
+        
         return {
           'ocr_text': '$promptHint$dateContextStr$maskedText',
           'type': localType,
