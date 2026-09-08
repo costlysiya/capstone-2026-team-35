@@ -1812,6 +1812,15 @@ class HomeScreen extends ConsumerWidget {
     String extraInfo = "";
     if (categoryId == 0) extraInfo = ref.read(scheduleDateProvider).text;
     if (categoryId == 1) extraInfo = ref.read(placeLocationProvider).text;
+    if (categoryId == 2) {
+      final curFields = cur.aiFields ?? {};
+      if (curFields.containsKey('items') && curFields['items'] is List && (curFields['items'] as List).isNotEmpty) {
+        final safeIdx = ref.read(currentItemIndexProvider) < (curFields['items'] as List).length ? ref.read(currentItemIndexProvider) : 0;
+        extraInfo = (curFields['items'][safeIdx]['price_amount'] ?? '').toString();
+      } else {
+        extraInfo = (curFields['price_amount'] ?? '').toString();
+      }
+    }
     if (categoryId == 3) extraInfo = memoSubType;
 
     // 기프티콘(0_1)과 위시리스트(2)만 갤러리 원본 스크린샷 사진 주소 저장
@@ -2323,7 +2332,13 @@ class HomeScreen extends ConsumerWidget {
                                                     ),
                                                   )
                                                 else
-                                                  TextField(controller: extraCtrl, decoration: const InputDecoration(labelText: '추가 정보')),
+                                                else
+                                                  TextField(
+                                                    controller: extraCtrl, 
+                                                    decoration: InputDecoration(
+                                                      labelText: editCatId == 1 ? '장소/위치' : (editCatId == 2 ? '가격' : (editCatId == 3 ? '세부 카테고리' : '추가 정보'))
+                                                    )
+                                                  ),
                                                 const SizedBox(height: 10),
                                                 if (aiFieldCtrls.isNotEmpty) ...[
                                                   Align(
