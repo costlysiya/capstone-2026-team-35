@@ -2,10 +2,10 @@
 from typing import Any, Optional
 
 REQUIRED_FIELDS = {
-    "SCHEDULE": ["title"],           # + expires_at 또는 start_at 중 하나
-    "PLACE":    [],                   # name 또는 region 중 하나
-    "WISHLIST": ["product_name"],     # price_amount는 없을 수도 있으므로 선택
-    "MEMO":     ["body"]
+    "SCHEDULE": ["title"],  # + expires_at 또는 start_at 중 하나
+    "PLACE": [],  # name 또는 region 중 하나
+    "WISHLIST": ["product_name"],  # price_amount는 없을 수도 있으므로 선택
+    "MEMO": ["body"],
 }
 
 VALID_TYPES = {"SCHEDULE", "PLACE", "WISHLIST", "MEMO"}
@@ -47,9 +47,9 @@ def _enrich_schedule_fields(fields: dict) -> dict:
 
     # 1) 기프티콘: 사진 유지 + 만료 알림 자동 설정
     if sub_type == "GIFTICON":
-        fields.setdefault("keep_photo", True)         # 바코드 원본 보관
+        fields.setdefault("keep_photo", True)  # 바코드 원본 보관
         fields.setdefault("reminder_days", [7, 3, 1])  # D-7, D-3, D-1
-        fields.setdefault("calendar_type", "EXPIRY")   # 만료일 기준 등록
+        fields.setdefault("calendar_type", "EXPIRY")  # 만료일 기준 등록
 
     # 2) 구독 서비스: 반복 주기 + 장기 알림
     elif sub_type == "SUBSCRIPTION":
@@ -62,13 +62,13 @@ def _enrich_schedule_fields(fields: dict) -> dict:
 
     # 3) 일반 약속/미팅
     elif sub_type == "APPOINTMENT":
-        fields.setdefault("keep_photo", False)          # 사진 삭제
+        fields.setdefault("keep_photo", False)  # 사진 삭제
         fields.setdefault("reminder_days", [1])
         fields.setdefault("calendar_type", "EVENT")
 
     # 4) 티켓 (KTX, 영화, 공연)
     elif sub_type == "TICKET":
-        fields.setdefault("keep_photo", True)           # 예매 번호 보관
+        fields.setdefault("keep_photo", True)  # 예매 번호 보관
         fields.setdefault("reminder_days", [3, 1])
         fields.setdefault("calendar_type", "EVENT")
 
@@ -94,8 +94,21 @@ def _enrich_schedule_fields(fields: dict) -> dict:
 
 
 STANDARD_REGIONS = [
-    "서울", "부산", "대구", "인천", "광주", "대전", "울산",
-    "경기", "강원", "충청", "전라", "경북", "경남", "제주", "해외"
+    "서울",
+    "부산",
+    "대구",
+    "인천",
+    "광주",
+    "대전",
+    "울산",
+    "경기",
+    "강원",
+    "충청",
+    "전라",
+    "경북",
+    "경남",
+    "제주",
+    "해외",
 ]
 
 REGION_ALIAS_MAP = {
@@ -133,7 +146,7 @@ REGION_ALIAS_MAP = {
 def normalize_region_string(region: str, address: str = "") -> str:
     """지역명 및 주소를 기반으로 15개 표준 광역 지자체명으로 시작하도록 정규화"""
     combined = f"{region} {address}".strip()
-    
+
     # 1. '해운대구'의 '대구' 오인식 방지 (최우선 예외)
     if "해운대" in combined:
         if region.startswith("대구"):
@@ -165,23 +178,23 @@ def normalize_address_string(address: str) -> str:
     """주소 맨 앞의 광역 지자체명을 15개 표준 명칭으로 축약하여 프론트 contains 필터링과 호환되도록 처리"""
     if not address:
         return address
-    
+
     # 1. 해운대구에 부산이 없으면 앞에 부산 추가
     if "해운대" in address and not address.startswith("부산"):
         address = f"부산 {address}".strip()
-        
+
     # 2. 경상남도 -> 경남 등 맨 앞 단어 표준화
     for full_name, std_name in REGION_ALIAS_MAP.items():
         if address.startswith(full_name):
             address = address.replace(full_name, std_name, 1).strip()
             break
-            
+
     return address
 
 
 def _enrich_place_fields(fields: dict) -> dict:
     """Enrich PLACE fields for map integration."""
-    fields.setdefault("keep_photo", False)      # 장소는 사진 불필요
+    fields.setdefault("keep_photo", False)  # 장소는 사진 불필요
     fields.setdefault("map_ready", bool(fields.get("address") or fields.get("region")))
     # category 정규화 (없으면 "기타")
     fields.setdefault("category", "기타")
@@ -189,7 +202,7 @@ def _enrich_place_fields(fields: dict) -> dict:
     # 🗺️ 15대 표준 광역 지자체명 정규화 (프론트엔드 필터링 호환)
     region = fields.get("region") or ""
     address = fields.get("address") or ""
-    
+
     if region or address:
         fields["region"] = normalize_region_string(region, address)
         if address:
@@ -203,22 +216,23 @@ def _enrich_place_fields(fields: dict) -> dict:
 
 def _enrich_wishlist_fields(fields: dict) -> dict:
     """Enrich WISHLIST fields."""
-    fields.setdefault("keep_photo", True)       # 상품 원본 이미지 보관
+    fields.setdefault("keep_photo", True)  # 상품 원본 이미지 보관
     # 가격 정규화: 문자열이면 숫자만 추출
     price = fields.get("price_amount")
     if isinstance(price, str):
         import re
-        nums = re.sub(r'[^\d.]', '', price)
+
+        nums = re.sub(r"[^\d.]", "", price)
         fields["price_amount"] = float(nums) if nums else None
     return fields
 
 
 def _enrich_memo_fields(fields: dict) -> dict:
     """Enrich MEMO fields."""
-    fields.setdefault("keep_photo", False)       # 메모는 사진 삭제
-    
+    fields.setdefault("keep_photo", False)  # 메모는 사진 삭제
+
     sub_type = fields.get("sub_type", "")
-    
+
     # Sub-type title overriding
     if sub_type == "NOVEL" and fields.get("book_title"):
         fields["title"] = fields["book_title"]
@@ -237,11 +251,11 @@ def _enrich_memo_fields(fields: dict) -> dict:
         elif fields.get("body"):
             body = fields["body"]
             fields["title"] = body[:30] + ("..." if len(body) > 30 else "")
-    
+
     # Rename items to checklist_items to avoid conflicts
     if sub_type == "CHECKLIST" and "items" in fields:
         fields["checklist_items"] = fields.pop("items")
-            
+
     return fields
 
 

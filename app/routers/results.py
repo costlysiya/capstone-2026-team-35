@@ -1,9 +1,14 @@
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Response
 from app.database import (
-    get_all_results, get_result_by_id, get_results_by_type,
-    get_results_by_status, update_status, update_fields, delete_result,
-    search_results
+    get_all_results,
+    get_result_by_id,
+    get_results_by_type,
+    get_results_by_status,
+    update_status,
+    update_fields,
+    delete_result,
+    search_results,
 )
 from app.schemas import ResultConfirmRequest
 import json
@@ -15,23 +20,37 @@ router = APIRouter(prefix="/api/results", tags=["결과"])
 
 @router.get("")
 def list_results(
-    type: Optional[str] = Query(None, description="타입 필터 (SCHEDULE, PLACE, WISHLIST, MEMO)"),
-    status: Optional[str] = Query(None, description="상태 필터 (DRAFT, CONFIRMED, NEEDS_EDIT)"),
+    type: Optional[str] = Query(
+        None, description="타입 필터 (SCHEDULE, PLACE, WISHLIST, MEMO)"
+    ),
+    status: Optional[str] = Query(
+        None, description="상태 필터 (DRAFT, CONFIRMED, NEEDS_EDIT)"
+    ),
     q: Optional[str] = Query(None, description="통합 검색어 (fields 내 텍스트 검색)"),
-    region: Optional[str] = Query(None, description="지역 필터 (PLACE 전용, 예: '서울')"),
-    category: Optional[str] = Query(None, description="카테고리 필터 (PLACE 전용, 예: '카페')"),
+    region: Optional[str] = Query(
+        None, description="지역 필터 (PLACE 전용, 예: '서울')"
+    ),
+    category: Optional[str] = Query(
+        None, description="카테고리 필터 (PLACE 전용, 예: '카페')"
+    ),
     page: int = Query(1, description="페이지 번호 (1부터 시작)", ge=1),
-    limit: int = Query(20, description="페이지 당 항목 수", ge=1, le=100)
+    limit: int = Query(20, description="페이지 당 항목 수", ge=1, le=100),
 ):
     """
     저장된 분석 결과 목록 조회 (검색 및 페이지네이션 지원).
     """
     offset = (page - 1) * limit
-    
+
     search_data = search_results(
-        type=type, status=status, q=q, region=region, category=category, limit=limit, offset=offset
+        type=type,
+        status=status,
+        q=q,
+        region=region,
+        category=category,
+        limit=limit,
+        offset=offset,
     )
-    
+
     results = search_data["items"]
 
     # fields 문자열 파싱
@@ -46,7 +65,7 @@ def list_results(
         "total": search_data["total"],
         "page": page,
         "limit": limit,
-        "items": results
+        "items": results,
     }
 
 
@@ -55,7 +74,9 @@ def get_result(id: int):
     """단건 결과 조회"""
     result = get_result_by_id(id)
     if not result:
-        raise HTTPException(status_code=404, detail=f"결과 #{id}을(를) 찾을 수 없습니다")
+        raise HTTPException(
+            status_code=404, detail=f"결과 #{id}을(를) 찾을 수 없습니다"
+        )
 
     # fields 파싱
     if isinstance(result.get("fields"), str):
@@ -75,16 +96,21 @@ def get_result(id: int):
 
     return result
 
+
 @router.get("/{id}/ical")
 def download_ical(id: int):
     """iCalendar (.ics) 파일 다운로드"""
     result = get_result_by_id(id)
     if not result:
-        raise HTTPException(status_code=404, detail=f"결과 #{id}을(를) 찾을 수 없습니다")
-        
+        raise HTTPException(
+            status_code=404, detail=f"결과 #{id}을(를) 찾을 수 없습니다"
+        )
+
     if result.get("type") != "SCHEDULE":
-        raise HTTPException(status_code=400, detail="일정(SCHEDULE) 타입만 캘린더 연동이 가능합니다")
-        
+        raise HTTPException(
+            status_code=400, detail="일정(SCHEDULE) 타입만 캘린더 연동이 가능합니다"
+        )
+
     if isinstance(result.get("fields"), str):
         try:
             fields = json.loads(result["fields"])
@@ -92,15 +118,13 @@ def download_ical(id: int):
             fields = {}
     else:
         fields = result.get("fields", {})
-        
+
     ics_content = generate_ics(fields)
-    
+
     return Response(
         content=ics_content,
         media_type="text/calendar",
-        headers={
-            "Content-Disposition": f'attachment; filename="schedule_{id}.ics"'
-        }
+        headers={"Content-Disposition": f'attachment; filename="schedule_{id}.ics"'},
     )
 
 
@@ -112,7 +136,9 @@ def update_result(id: int, request: ResultConfirmRequest):
     """
     existing = get_result_by_id(id)
     if not existing:
-        raise HTTPException(status_code=404, detail=f"결과 #{id}을(를) 찾을 수 없습니다")
+        raise HTTPException(
+            status_code=404, detail=f"결과 #{id}을(를) 찾을 수 없습니다"
+        )
 
     if request.edited_fields:
         # 기존 결과 복원
@@ -127,7 +153,7 @@ def update_result(id: int, request: ResultConfirmRequest):
         result_for_validate = {
             "type": existing["type"],
             "confidence": existing["confidence"],
-            "fields": current_fields
+            "fields": current_fields,
         }
         validated = revalidate_after_edit(result_for_validate, request.edited_fields)
 
@@ -143,7 +169,7 @@ def update_result(id: int, request: ResultConfirmRequest):
         return {
             "message": f"결과 #{id} 수정 완료",
             "status": validated.get("status", "CONFIRMED"),
-            "missing_fields": validated.get("missing_fields", [])
+            "missing_fields": validated.get("missing_fields", []),
         }
 
     # 수정 없이 승인만
@@ -156,7 +182,9 @@ def confirm_result(id: int):
     """결과 승인 (수정 없이 그대로 승인)"""
     existing = get_result_by_id(id)
     if not existing:
-        raise HTTPException(status_code=404, detail=f"결과 #{id}을(를) 찾을 수 없습니다")
+        raise HTTPException(
+            status_code=404, detail=f"결과 #{id}을(를) 찾을 수 없습니다"
+        )
 
     update_status(id, "CONFIRMED")
     return {"message": f"결과 #{id}이(가) 승인되었습니다"}
@@ -167,7 +195,9 @@ def remove_result(id: int):
     """결과 삭제"""
     existing = get_result_by_id(id)
     if not existing:
-        raise HTTPException(status_code=404, detail=f"결과 #{id}을(를) 찾을 수 없습니다")
+        raise HTTPException(
+            status_code=404, detail=f"결과 #{id}을(를) 찾을 수 없습니다"
+        )
 
     delete_result(id)
     return {"message": f"결과 #{id}이(가) 삭제되었습니다"}

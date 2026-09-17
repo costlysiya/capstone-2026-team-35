@@ -80,7 +80,6 @@ CLASSIFY_PROMPT = """당신은 스크린샷 OCR 텍스트를 분류하는 전문
 - 와이파이 비밀번호, 계좌번호 등 단순 텍스트 기록
 
 키워드 힌트: 재료, 만드는 법, 조리, 바코드, 리디북스, 카카오페이지,
-             네이버시리즈, 웹소설, 체크리스트, 할 일, TODO, 메모, 참고,
              기록, 출처, 제목, 챕터, 화, 편
 
 ---
@@ -238,8 +237,8 @@ WISHLIST_PROMPT = """당신은 쇼핑·위시리스트 정보를 정밀하게 �
   응답: {"fields": [{"product_name": "오버핏 베이직 티셔츠", "price_amount": "19900", "option": "블랙/L", "store_name": "무신사", "url": null}, {"product_name": "와이드 데님 팬츠", "price_amount": "45000", "option": "중청/M", "store_name": "무신사", "url": null}], "missing_fields": []}
 - 입력: "쿠팡 로켓배송\nApple 2024 아이패드 에어 11 M2\n색상: 스페이스 그레이 | 저장용량: 128GB | Wi-Fi 모델\n와우할인가 849,000원 (정가 899,000원 5% 할인)\n무료배송 내일(수) 도착 보장"
   응답: {"fields": [{"product_name": "Apple 2024 아이패드 에어 11 M2", "price_amount": "849000", "option": "스페이스 그레이 / 128GB / Wi-Fi", "store_name": "쿠팡", "url": null}], "missing_fields": []}
-- 입력: "이거 가방이랑 신발 진짜 예쁘지 않냐?\n- 아더에러 크로스백 189,000원 https://adererror.com/product/1\n- 아디다스 삼바 139,000원 (화이트 260)"
-  응답: {"fields": [{"product_name": "아더에러 크로스백", "price_amount": "189000", "option": null, "store_name": "아더에러", "url": "https://adererror.com/product/1"}, {"product_name": "아디다스 삼바", "price_amount": "139000", "option": "화이트 260", "store_name": "아디다스", "url": null}], "missing_fields": []}
+- 입력: "이거 가방이랑 신발 진짜 예쁘지 않냐?\n- 아더에러 크로스백 189,000원 https:// adererror.com/product/1\n- 아디다스 삼바 139,000원 (화이트 260)"
+  응답: {"fields": [{"product_name": "아더에러 크로스백", "price_amount": "189000", "option": null, "store_name": "아더에러", "url": "https:// adererror.com/product/1"}, {"product_name": "아디다스 삼바", "price_amount": "139000", "option": "화이트 260", "store_name": "아디다스", "url": null}], "missing_fields": []}
 """
 
 MEMO_PROMPT = """당신은 다양한 텍스트 정보를 구조화하는 AI입니다.
@@ -321,6 +320,7 @@ BULK_INSTRUCTION = """
 각 결과 항목의 'index' 필드에는 원본 텍스트에 부여된 번호를 정확히 기재하세요. (누락 금지)
 """
 
+
 def get_system_prompt(is_bulk: bool = False):
     """기존 호환용 (1단계 통합 프롬프트)"""
     prompt = CLASSIFY_PROMPT
@@ -328,10 +328,12 @@ def get_system_prompt(is_bulk: bool = False):
         prompt += BULK_INSTRUCTION
     return prompt
 
+
 ENC_RULE = """
 ⚠️ 개인정보 추출 규칙: 텍스트 내에 "[ENC:...]" 형태의 문구가 있다면 이는 주민번호, 전화번호, 카드번호 등 개인정보가 암호화/마스킹된 것입니다. 절대 무시하거나 누락시키지 말고, 본문(body, description 등)에 원문 그대로 또는 적절한 꼬리표(예: "주민번호: [ENC:...]")와 함께 반드시 포함시키세요.
 단, title(제목), name(상호명/이름), product_name(상품명) 등의 대표 '제목/이름' 필드에는 절대 "[ENC:...]" 형태의 문구가 포함되어서는 안 됩니다. 만약 제목에 해당하는 부분이 암호화되어 있다면, 맥락을 파악하여 적절한 일반 명사(예: "개인정보 기록", "카드 정보", "연락처")로 대체해서 제목을 지어주세요.
 """
+
 
 def get_type_prompt(screenshot_type: str, is_bulk: bool = False) -> str:
     """타입별 상세 추출 프롬프트"""

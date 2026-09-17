@@ -2,10 +2,24 @@ from typing import Union, List
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from app.schemas import (
-    AnalyzeRequest, AnalyzeResponse, BatchAnalyzeRequest, BatchAnalyzeResponse,
-    BatchAsyncResponse, BatchStatusResponse, ClassifyResponse, BatchClassifyResponse,
-    LLMClassifyResponse, LLMScheduleResponse, LLMPlaceResponse, LLMWishlistResponse, LLMMemoResponse,
-    LLMBulkClassifyResponse, LLMBulkScheduleResponse, LLMBulkPlaceResponse, LLMBulkWishlistResponse, LLMBulkMemoResponse
+    AnalyzeRequest,
+    AnalyzeResponse,
+    BatchAnalyzeRequest,
+    BatchAnalyzeResponse,
+    BatchAsyncResponse,
+    BatchStatusResponse,
+    ClassifyResponse,
+    BatchClassifyResponse,
+    LLMClassifyResponse,
+    LLMScheduleResponse,
+    LLMPlaceResponse,
+    LLMWishlistResponse,
+    LLMMemoResponse,
+    LLMBulkClassifyResponse,
+    LLMBulkScheduleResponse,
+    LLMBulkPlaceResponse,
+    LLMBulkWishlistResponse,
+    LLMBulkMemoResponse,
 )
 from app.prompts import get_system_prompt, CLASSIFY_PROMPT, get_type_prompt
 from app.validator import validate_result
@@ -62,19 +76,19 @@ def _extract_fields(raw: dict) -> dict:
 
 def _detect_token_type(token: str) -> str:
     """Determine original token type from masked token via regex."""
-    clean = re.sub(r'[\-\s]', '', token)
-    
-    if re.match(r'^[\d\*]{16}$', clean):
-        return "CARD"        # 카드번호 (16자리)
-    elif re.match(r'^[\d\*]{13}$', clean):
+    clean = re.sub(r"[\-\s]", "", token)
+
+    if re.match(r"^[\d\*]{16}$", clean):
+        return "CARD"  # 카드번호 (16자리)
+    elif re.match(r"^[\d\*]{13}$", clean):
         # 원본에서 7번째 자리가 하이픈(-)이면 주민번호, 아니면 13자리 바코드
-        if len(token) > 6 and token[6] == '-':
+        if len(token) > 6 and token[6] == "-":
             return "SSN"
         return "BARCODE"
-    elif re.match(r'^010[\d\*]{8}$', clean) or re.match(r'^0[\d\*]{8,10}$', clean):
-        return "PHONE"       # 전화번호
-    elif re.match(r'^[\d\*]{10,14}$', clean):
-        return "BARCODE"     # 기타 길이의 바코드
+    elif re.match(r"^010[\d\*]{8}$", clean) or re.match(r"^0[\d\*]{8,10}$", clean):
+        return "PHONE"  # 전화번호
+    elif re.match(r"^[\d\*]{10,14}$", clean):
+        return "BARCODE"  # 기타 길이의 바코드
     else:
         return "OTHER"
 
@@ -89,19 +103,26 @@ def analyze_screenshot(request: AnalyzeRequest):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"분석 실패: {str(e)}")
-    
-@router.post("/analyze/v2", response_model=Union[AnalyzeResponse, List[AnalyzeResponse]])
+
+
+@router.post(
+    "/analyze/v2", response_model=Union[AnalyzeResponse, List[AnalyzeResponse]]
+)
 def analyze_v2(request: AnalyzeRequest):
     """Two-stage analysis: Classify -> Detail Extraction."""
-    
+
     # Log incoming request
-    logger.info(f"[v2] 📥 요청 수신 | type: {request.type} | ocr_text({len(request.ocr_text)}자): {request.ocr_text[:200]}{'...' if len(request.ocr_text) > 200 else ''}")
+    logger.info(
+        f"[v2] 📥 요청 수신 | type: {request.type} | ocr_text({len(request.ocr_text)}자): {request.ocr_text[:200]}{'...' if len(request.ocr_text) > 200 else ''}"
+    )
 
     # Check cache
     if request.image_hash:
         cached_list = get_results_by_hash(request.image_hash)
         if cached_list:
-            logger.info(f"[v2] 🗃️ 캐시 히트! hash={request.image_hash[:16]}... (총 {len(cached_list)}건)")
+            logger.info(
+                f"[v2] 🗃️ 캐시 히트! hash={request.image_hash[:16]}... (총 {len(cached_list)}건)"
+            )
             responses = []
             for cached in cached_list:
                 cached_fields = cached["fields"]
@@ -110,14 +131,16 @@ def analyze_v2(request: AnalyzeRequest):
                         cached_fields = json.loads(cached_fields)
                     except json.JSONDecodeError:
                         cached_fields = {}
-                responses.append(AnalyzeResponse(
-                    id=cached["id"],
-                    type=cached["type"],
-                    confidence=cached["confidence"],
-                    fields=cached_fields,
-                    missing_fields=[],
-                    status=cached["status"]
-                ))
+                responses.append(
+                    AnalyzeResponse(
+                        id=cached["id"],
+                        type=cached["type"],
+                        confidence=cached["confidence"],
+                        fields=cached_fields,
+                        missing_fields=[],
+                        status=cached["status"],
+                    )
+                )
             return responses if len(responses) > 1 else responses[0]
 
     # Validate input length
@@ -129,7 +152,7 @@ def analyze_v2(request: AnalyzeRequest):
             confidence=0.0,
             fields={"body": clean_text} if clean_text else {},
             missing_fields=["텍스트가 너무 짧습니다 (3자 이상 필요)"],
-            status="NEEDS_EDIT"
+            status="NEEDS_EDIT",
         )
 
     # 🛡️ 입력 검증: 너무 긴 텍스트 (LLM 토큰 제한 방지)
@@ -148,17 +171,19 @@ def analyze_v2(request: AnalyzeRequest):
             call_llm,
             system_prompt=CLASSIFY_PROMPT,
             user_text=request.ocr_text,
-            response_format=LLMClassifyResponse
+            response_format=LLMClassifyResponse,
         )
         detected_type = classify_result.get("type", "MEMO")
         classify_confidence = classify_result.get("confidence", 0)
-        logger.info(f"[v2] LLM 분류: {detected_type} (신뢰도: {classify_confidence}) (전체응답: {classify_result})")
-    
+        logger.info(
+            f"[v2] LLM 분류: {detected_type} (신뢰도: {classify_confidence}) (전체응답: {classify_result})"
+        )
+
     schema_map = {
         "SCHEDULE": LLMScheduleResponse,
         "PLACE": LLMPlaceResponse,
         "WISHLIST": LLMWishlistResponse,
-        "MEMO": LLMMemoResponse
+        "MEMO": LLMMemoResponse,
     }
     extract_schema = schema_map.get(detected_type, LLMMemoResponse)
 
@@ -167,49 +192,55 @@ def analyze_v2(request: AnalyzeRequest):
         call_llm,
         system_prompt=get_type_prompt(detected_type),
         user_text=request.ocr_text,
-        response_format=extract_schema
+        response_format=extract_schema,
     )
-    
+
     # 🔍 디버깅: GPT가 실제로 뭘 반환했는지 로그로 확인
-    logger.info(f"[v2] 분류: {detected_type} | GPT 추출 원본: {json.dumps(extract_result, ensure_ascii=False, default=str)}")
-    
+    logger.info(
+        f"[v2] 분류: {detected_type} | GPT 추출 원본: {json.dumps(extract_result, ensure_ascii=False, default=str)}"
+    )
+
     # 🚨 GPT 응답 형식을 유연하게 파싱
     extracted_fields = _extract_fields(extract_result)
-    
+
     # 마스킹 토큰 정보 구조화
     masked_info_list = []
     if request.masked_tokens:
         for token in request.masked_tokens:
             t_type = _detect_token_type(token)
-            masked_info_list.append({
-                "original": token,
-                "type": t_type
-            })
+            masked_info_list.append({"original": token, "type": t_type})
 
     # 다중 항목(items) 처리 로직 (단, MEMO(체크리스트 등)는 분할하지 않고 단일 카드로 유지)
-    if detected_type != "MEMO" and "items" in extracted_fields and isinstance(extracted_fields["items"], list) and len(extracted_fields["items"]) > 0:
-        logger.info(f"[v2] 다중 항목 감지: {len(extracted_fields['items'])}건 분할 저장 시작 (분류: {detected_type})")
+    if (
+        detected_type != "MEMO"
+        and "items" in extracted_fields
+        and isinstance(extracted_fields["items"], list)
+        and len(extracted_fields["items"]) > 0
+    ):
+        logger.info(
+            f"[v2] 다중 항목 감지: {len(extracted_fields['items'])}건 분할 저장 시작 (분류: {detected_type})"
+        )
         responses = []
         for item in extracted_fields["items"]:
             final = {
                 "type": detected_type,
                 "confidence": classify_confidence,
                 "fields": item,
-                "missing_fields": extract_result.get("missing_fields", [])
+                "missing_fields": extract_result.get("missing_fields", []),
             }
             if "error" in extract_result:
                 final["status"] = "ERROR"
             else:
                 final = validate_result(final)
-            
+
             row_id = save_result(
                 type=final["type"],
                 confidence=final.get("confidence", 0),
                 fields=json.dumps(final.get("fields", {}), ensure_ascii=False),
                 image_hash=request.image_hash,
-                status=final.get("status", "DRAFT")
+                status=final.get("status", "DRAFT"),
             )
-            
+
             resp = AnalyzeResponse(
                 id=row_id,
                 type=final["type"],
@@ -217,30 +248,30 @@ def analyze_v2(request: AnalyzeRequest):
                 fields=final.get("fields", {}),
                 missing_fields=final.get("missing_fields", []),
                 status=final.get("status", "DRAFT"),
-                masked_info=masked_info_list
+                masked_info=masked_info_list,
             )
             responses.append(resp)
         return responses if len(responses) > 1 else responses[0]
-    
+
     # 단일 항목 처리 로직
     final = {
         "type": detected_type,
         "confidence": classify_confidence,
         "fields": extracted_fields,
-        "missing_fields": extract_result.get("missing_fields", [])
+        "missing_fields": extract_result.get("missing_fields", []),
     }
-    
+
     if "error" in extract_result:
         final["status"] = "ERROR"
     else:
         final = validate_result(final)
-    
+
     row_id = save_result(
         type=final["type"],
         confidence=final.get("confidence", 0),
         fields=json.dumps(final.get("fields", {}), ensure_ascii=False),
         image_hash=request.image_hash,
-        status=final.get("status", "DRAFT")
+        status=final.get("status", "DRAFT"),
     )
 
     return AnalyzeResponse(
@@ -250,8 +281,9 @@ def analyze_v2(request: AnalyzeRequest):
         fields=final.get("fields", {}),
         missing_fields=final.get("missing_fields", []),
         status=final.get("status", "DRAFT"),
-        masked_info=masked_info_list
+        masked_info=masked_info_list,
     )
+
 
 @router.post("/classify/batch", response_model=BatchClassifyResponse)
 def classify_batch(request: BatchAnalyzeRequest):
@@ -262,21 +294,18 @@ def classify_batch(request: BatchAnalyzeRequest):
     """
     if len(request.items) > 50:
         raise HTTPException(
-            status_code=400,
-            detail="초고속 분류 배치 요청은 최대 50개까지 가능합니다"
+            status_code=400, detail="초고속 분류 배치 요청은 최대 50개까지 가능합니다"
         )
     if len(request.items) == 0:
         raise HTTPException(status_code=400, detail="분석할 항목이 없습니다")
 
     results_map = {}
     valid_items = []
-    
+
     for idx, item in enumerate(request.items):
         clean_text = item.ocr_text.strip()
         if len(clean_text) < 3:
-            results_map[idx] = ClassifyResponse(
-                index=idx, type="MEMO", confidence=0.0
-            )
+            results_map[idx] = ClassifyResponse(index=idx, type="MEMO", confidence=0.0)
             continue
         if len(clean_text) > 5000:
             clean_text = clean_text[:5000]
@@ -285,22 +314,22 @@ def classify_batch(request: BatchAnalyzeRequest):
     if valid_items:
         bulk_texts = [f"[{idx}]\n{text}" for idx, text in valid_items]
         bulk_input_str = "\n---\n".join(bulk_texts)
-        
+
         try:
             bulk_result = call_llm_with_limit(
                 call_llm,
                 system_prompt=get_system_prompt(is_bulk=True),
                 user_text=bulk_input_str,
-                response_format=LLMBulkClassifyResponse
+                response_format=LLMBulkClassifyResponse,
             )
-            
+
             for res_item in bulk_result.get("results", []):
                 idx = res_item.get("index")
                 if idx is not None:
                     results_map[idx] = ClassifyResponse(
                         index=idx,
                         type=res_item.get("type", "MEMO"),
-                        confidence=res_item.get("confidence", 0.0)
+                        confidence=res_item.get("confidence", 0.0),
                     )
         except Exception as e:
             logger.error(f"[classify_batch] 벌크 분석 에러: {e}")
@@ -310,9 +339,13 @@ def classify_batch(request: BatchAnalyzeRequest):
                 )
 
     # 인덱스 순서대로 조립
-    final_results = [results_map.get(i, ClassifyResponse(index=i, type="MEMO", confidence=0.0)) for i in range(len(request.items))]
-    
+    final_results = [
+        results_map.get(i, ClassifyResponse(index=i, type="MEMO", confidence=0.0))
+        for i in range(len(request.items))
+    ]
+
     return BatchClassifyResponse(total=len(request.items), results=final_results)
+
 
 def _process_batch_item(idx: int, item: AnalyzeRequest):
     """단일 항목을 독립적으로 분석하고 original_index를 정확히 보존"""
@@ -344,15 +377,11 @@ def analyze_batch(request: BatchAnalyzeRequest):
     logger.info(f"[analyze_batch] 총 {len(request.items)}건 병렬 독립 분석 시작")
     if len(request.items) > 20:
         raise HTTPException(
-            status_code=400,
-            detail="배치 요청은 최대 20개까지 가능합니다"
+            status_code=400, detail="배치 요청은 최대 20개까지 가능합니다"
         )
 
     if len(request.items) == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="분석할 항목이 없습니다"
-        )
+        raise HTTPException(status_code=400, detail="분석할 항목이 없습니다")
 
     results_by_index: dict[int, list[AnalyzeResponse]] = {}
     errors: list[dict] = []
@@ -383,7 +412,7 @@ def analyze_batch(request: BatchAnalyzeRequest):
         success=len(results),
         failed=len(errors),
         results=results,
-        errors=errors
+        errors=errors,
     )
 
 
@@ -391,42 +420,44 @@ def _process_batch_background(task_id: str, request: BatchAnalyzeRequest):
     """백그라운드에서 배치 항목을 Bulk 분석하고 상태를 업데이트하는 워커"""
     try:
         _task_store[task_id]["status"] = "PROCESSING"
-        
-        logger.info(f"[async_batch] {task_id} - Bulk 분석 시작 (총 {len(request.items)}건)")
+
+        logger.info(
+            f"[async_batch] {task_id} - Bulk 분석 시작 (총 {len(request.items)}건)"
+        )
         response = analyze_batch(request)
-        
+
         _task_store[task_id]["results"] = response.results
         _task_store[task_id]["errors"] = response.errors
         _task_store[task_id]["completed"] = response.success
         _task_store[task_id]["failed"] = response.failed
         _task_store[task_id]["status"] = "COMPLETED"
         logger.info(f"[async_batch] {task_id} - Bulk 분석 완료")
-    
+
     except Exception as e:
         logger.error(f"[async_batch] {task_id} - 전체 프로세스 실패: {e}")
         _task_store[task_id]["status"] = "ERROR"
-        _task_store[task_id]["errors"].append({"index": -1, "error": f"백그라운드 작업 중단됨: {str(e)}"})
+        _task_store[task_id]["errors"].append(
+            {"index": -1, "error": f"백그라운드 작업 중단됨: {str(e)}"}
+        )
 
 
 @router.post("/analyze/batch/async", response_model=BatchAsyncResponse, status_code=202)
-def analyze_batch_async(request: BatchAnalyzeRequest, background_tasks: BackgroundTasks):
+def analyze_batch_async(
+    request: BatchAnalyzeRequest, background_tasks: BackgroundTasks
+):
     """
     [비동기 큐] 복수 이미지를 접수하고 즉시 반환.
     백그라운드에서 순차적으로 분석을 진행합니다.
     """
     if len(request.items) > 20:
         raise HTTPException(
-            status_code=400,
-            detail="배치 요청은 최대 20개까지 가능합니다"
+            status_code=400, detail="배치 요청은 최대 20개까지 가능합니다"
         )
     if len(request.items) == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="분석할 항목이 없습니다"
-        )
+        raise HTTPException(status_code=400, detail="분석할 항목이 없습니다")
 
     task_id = str(uuid.uuid4())
-    
+
     # 딕셔너리에 상태 초기화 등록
     _task_store[task_id] = {
         "status": "PENDING",
@@ -434,14 +465,16 @@ def analyze_batch_async(request: BatchAnalyzeRequest, background_tasks: Backgrou
         "completed": 0,
         "failed": 0,
         "results": [],
-        "errors": []
+        "errors": [],
     }
 
     # 백그라운드 태스크 등록
     background_tasks.add_task(_process_batch_background, task_id, request)
 
-    logger.info(f"[async_batch] 비동기 작업 접수 완료: {task_id} (총 {len(request.items)}건)")
-    
+    logger.info(
+        f"[async_batch] 비동기 작업 접수 완료: {task_id} (총 {len(request.items)}건)"
+    )
+
     return BatchAsyncResponse(task_id=task_id)
 
 
@@ -452,10 +485,12 @@ def get_task_status(task_id: str):
     (Polling 방식으로 호출)
     """
     if task_id not in _task_store:
-        raise HTTPException(status_code=404, detail="존재하지 않거나 만료된 작업입니다.")
-    
+        raise HTTPException(
+            status_code=404, detail="존재하지 않거나 만료된 작업입니다."
+        )
+
     task_data = _task_store[task_id]
-    
+
     return BatchStatusResponse(
         task_id=task_id,
         status=task_data["status"],
@@ -463,5 +498,5 @@ def get_task_status(task_id: str):
         completed=task_data["completed"],
         failed=task_data["failed"],
         results=task_data["results"],
-        errors=task_data["errors"]
+        errors=task_data["errors"],
     )

@@ -3,17 +3,23 @@ from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel
 from enum import Enum
 
+
 class ScreenshotType(str, Enum):
     """4대 분류 타입"""
+
     SCHEDULE = "SCHEDULE"
     PLACE = "PLACE"
     WISHLIST = "WISHLIST"
     MEMO = "MEMO"
 
+
 class AnalyzeRequest(BaseModel):
     """앱 → 서버 요청"""
+
     ocr_text: str
-    type: Optional[ScreenshotType] = None  # 앱에서 로컬 분류한 타입 (없으면 서버가 LLM으로 분류)
+    type: Optional[ScreenshotType] = (
+        None  # 앱에서 로컬 분류한 타입 (없으면 서버가 LLM으로 분류)
+    )
     masked_tokens: list[str] = []
     image_hash: Optional[str] = None  # 이미지 SHA-256 해시 (중복 분석 방지용)
 
@@ -23,19 +29,23 @@ class AnalyzeRequest(BaseModel):
                 "ocr_text": "[기프티콘] 스타벅스 아메리카노\n유효기간: 2026.08.15",
                 "type": "SCHEDULE",
                 "masked_tokens": [],
-                "image_hash": "a1b2c3d4e5f6..."
+                "image_hash": "a1b2c3d4e5f6...",
             }
         }
 
+
 class ClassifyResponse(BaseModel):
     """분류 전용 결과 응답"""
+
     index: int
     type: str
     confidence: float
     reasoning: str = ""
 
+
 class AnalyzeResponse(BaseModel):
     """서버 → 앱 응답"""
+
     id: Optional[int] = None
     original_index: Optional[int] = None  # 배치 분석 시 원본 요청 배열의 인덱스
     type: ScreenshotType
@@ -45,12 +55,16 @@ class AnalyzeResponse(BaseModel):
     status: str = "DRAFT"
     masked_info: list[dict] = []  # 앱에서 마스킹해서 보낸 원본 토큰의 구조화된 정보
 
+
 class ResultConfirmRequest(BaseModel):
     """사용자 승인 요청"""
+
     edited_fields: Optional[dict] = None  # 수정된 필드 (있으면)
+
 
 class ResultDetailResponse(BaseModel):
     """단건 결과 상세 응답"""
+
     id: int
     type: ScreenshotType
     confidence: float
@@ -60,40 +74,59 @@ class ResultDetailResponse(BaseModel):
     updated_at: Optional[str] = None
     ical_string: Optional[str] = None
 
+
 class BatchAnalyzeRequest(BaseModel):
     """배치 분석 요청 — 복수 이미지를 한 번에"""
+
     items: list[AnalyzeRequest]  # 최대 20개까지
 
     class Config:
         json_schema_extra = {
             "example": {
                 "items": [
-                    {"ocr_text": "[기프티콘] 스타벅스 아메리카노\n유효기간: 2026.08.15", "type": "SCHEDULE", "masked_tokens": []},
-                    {"ocr_text": "을지다락 ★4.5\n서울 중구 을지로 115", "type": "PLACE", "masked_tokens": []}
+                    {
+                        "ocr_text": "[기프티콘] 스타벅스 아메리카노\n유효기간: 2026.08.15",
+                        "type": "SCHEDULE",
+                        "masked_tokens": [],
+                    },
+                    {
+                        "ocr_text": "을지다락 ★4.5\n서울 중구 을지로 115",
+                        "type": "PLACE",
+                        "masked_tokens": [],
+                    },
                 ]
             }
         }
 
+
 class BatchAnalyzeResponse(BaseModel):
     """배치 분석 응답"""
+
     total: int
     success: int
     failed: int
     results: list[AnalyzeResponse]
     errors: list[dict] = []
+
+
 class BatchClassifyResponse(BaseModel):
     """묶음 분류 전용 응답"""
+
     total: int
     results: list[ClassifyResponse]
 
+
 class BatchAsyncResponse(BaseModel):
     """비동기 배치 분석 접수 응답"""
+
     task_id: str
     status: str = "PENDING"
     message: str = "배치 작업이 백그라운드 큐에 등록되었습니다."
 
+
 class BatchStatusResponse(BaseModel):
     """비동기 배치 작업 상태 응답"""
+
     task_id: str
     status: str  # PENDING, PROCESSING, COMPLETED, ERROR
     total: int
@@ -102,8 +135,10 @@ class BatchStatusResponse(BaseModel):
     results: list[AnalyzeResponse] = []
     errors: list[dict] = []
 
+
 class TokenRequest(BaseModel):
     device_token: str
+
 
 class NotificationResponse(BaseModel):
     id: int
@@ -113,30 +148,46 @@ class NotificationResponse(BaseModel):
     is_read: bool
     created_at: str
 
+
 # === LLM Structured Outputs (json_schema) ===
 from pydantic import Field
+
 
 class LLMClassifyResponse(BaseModel):
     type: str = Field(description="SCHEDULE, PLACE, WISHLIST, MEMO 중 하나")
     confidence: float = Field(description="분류 신뢰도 0.0~1.0")
 
+
 class LLMScheduleItem(BaseModel):
     title: str = Field(description="일정/기프티콘/예약 이름")
-    start_at: Optional[str] = Field(None, description="시작일/예약일/출발일/체크인일 YYYY-MM-DD")
-    end_at: Optional[str] = Field(None, description="종료일/도착일/체크아웃일 YYYY-MM-DD")
+    start_at: Optional[str] = Field(
+        None, description="시작일/예약일/출발일/체크인일 YYYY-MM-DD"
+    )
+    end_at: Optional[str] = Field(
+        None, description="종료일/도착일/체크아웃일 YYYY-MM-DD"
+    )
     expires_at: Optional[str] = Field(None, description="만료일/유효기간 YYYY-MM-DD")
     start_time: Optional[str] = Field(None, description="시작 시각 HH:MM")
     end_time: Optional[str] = Field(None, description="종료 시각 HH:MM")
-    reminder_days: Optional[list[int]] = Field(None, description="알림 추천 일수 리스트")
+    reminder_days: Optional[list[int]] = Field(
+        None, description="알림 추천 일수 리스트"
+    )
     exchange_place: Optional[str] = Field(None, description="교환처/장소")
     participants: Optional[list[str]] = Field(None, description="참여자")
     recurrence: Optional[str] = Field(None, description="반복 주기")
-    cancellation_deadline: Optional[str] = Field(None, description="취소/환불 마감일시 YYYY-MM-DD HH:MM")
-    sub_type: Optional[str] = Field(None, description="GIFTICON, APPOINTMENT, TICKET, SUBSCRIPTION, DEADLINE, DELIVERY 중 하나")
+    cancellation_deadline: Optional[str] = Field(
+        None, description="취소/환불 마감일시 YYYY-MM-DD HH:MM"
+    )
+    sub_type: Optional[str] = Field(
+        None,
+        description="GIFTICON, APPOINTMENT, TICKET, SUBSCRIPTION, DEADLINE, DELIVERY 중 하나",
+    )
+
 
 class LLMScheduleResponse(BaseModel):
     fields: list[LLMScheduleItem]
     missing_fields: list[str]
+
 
 class LLMPlaceItem(BaseModel):
     name: str = Field(description="장소/식당 이름")
@@ -145,9 +196,11 @@ class LLMPlaceItem(BaseModel):
     category: Optional[str] = Field(None, description="카테고리")
     opening_hours: Optional[str] = Field(None, description="영업시간")
 
+
 class LLMPlaceResponse(BaseModel):
     fields: list[LLMPlaceItem]
     missing_fields: list[str]
+
 
 class LLMWishlistItem(BaseModel):
     product_name: str = Field(description="상품 이름")
@@ -156,50 +209,60 @@ class LLMWishlistItem(BaseModel):
     store_name: Optional[str] = Field(None, description="판매처 이름")
     url: Optional[str] = Field(None, description="URL")
 
+
 class LLMWishlistResponse(BaseModel):
     fields: list[LLMWishlistItem]
     missing_fields: list[str]
+
 
 class LLMIngredient(BaseModel):
     name: str = Field(description="재료 이름")
     amount: Optional[str] = Field(None, description="수량")
 
+
 class LLMChecklistItem(BaseModel):
     text: str = Field(description="항목 내용")
     checked: bool = Field(description="완료 여부")
 
+
 class LLMMemoItem(BaseModel):
     body: str = Field(description="핵심 내용")
-    sub_type: str = Field(description="RECIPE, NOVEL, CHECKLIST, ARTICLE, NOTE, OTHER 중 하나")
+    sub_type: str = Field(
+        description="RECIPE, NOVEL, CHECKLIST, ARTICLE, NOTE, OTHER 중 하나"
+    )
     title: Optional[str] = Field(None, description="제목")
     source: Optional[str] = Field(None, description="출처")
     date: Optional[str] = Field(None, description="날짜 YYYY-MM-DD")
     url: Optional[str] = Field(None, description="URL")
-    
+
     recipe_name: Optional[str] = Field(None, description="요리 이름")
     ingredients: Optional[list[LLMIngredient]] = Field(None, description="재료 리스트")
     steps: Optional[list[str]] = Field(None, description="조리 순서")
     servings: Optional[str] = Field(None, description="인분")
     cook_time: Optional[str] = Field(None, description="조리 시간")
-    
+
     book_title: Optional[str] = Field(None, description="책 제목")
     author: Optional[str] = Field(None, description="작가명")
     platform: Optional[str] = Field(None, description="플랫폼")
     chapter: Optional[str] = Field(None, description="회차")
     genre: Optional[str] = Field(None, description="장르")
     excerpt: Optional[str] = Field(None, description="발췌 원문")
-    
-    checklist_items: Optional[list[LLMChecklistItem]] = Field(None, description="할 일 목록")
+
+    checklist_items: Optional[list[LLMChecklistItem]] = Field(
+        None, description="할 일 목록"
+    )
     total_count: Optional[int] = Field(None, description="총 개수")
     checked_count: Optional[int] = Field(None, description="완료 개수")
-    
+
     headline: Optional[str] = Field(None, description="기사 제목")
     publisher: Optional[str] = Field(None, description="작성자")
     published_at: Optional[str] = Field(None, description="발행일")
 
+
 class LLMMemoResponse(BaseModel):
     fields: list[LLMMemoItem]
     missing_fields: list[str]
+
 
 # === Bulk Processing Schemas ===
 class LLMBulkClassifyItem(BaseModel):
@@ -207,37 +270,46 @@ class LLMBulkClassifyItem(BaseModel):
     type: str = Field(description="SCHEDULE, PLACE, WISHLIST, MEMO 중 하나")
     confidence: float = Field(description="분류 신뢰도 0.0~1.0")
 
+
 class LLMBulkClassifyResponse(BaseModel):
     results: list[LLMBulkClassifyItem]
+
 
 class LLMBulkScheduleItemResponse(BaseModel):
     index: int = Field(description="제공된 텍스트의 인덱스 번호")
     fields: list[LLMScheduleItem]
     missing_fields: list[str]
 
+
 class LLMBulkScheduleResponse(BaseModel):
     results: list[LLMBulkScheduleItemResponse]
+
 
 class LLMBulkPlaceItemResponse(BaseModel):
     index: int = Field(description="제공된 텍스트의 인덱스 번호")
     fields: list[LLMPlaceItem]
     missing_fields: list[str]
 
+
 class LLMBulkPlaceResponse(BaseModel):
     results: list[LLMBulkPlaceItemResponse]
+
 
 class LLMBulkWishlistItemResponse(BaseModel):
     index: int = Field(description="제공된 텍스트의 인덱스 번호")
     fields: list[LLMWishlistItem]
     missing_fields: list[str]
 
+
 class LLMBulkWishlistResponse(BaseModel):
     results: list[LLMBulkWishlistItemResponse]
+
 
 class LLMBulkMemoItemResponse(BaseModel):
     index: int = Field(description="제공된 텍스트의 인덱스 번호")
     fields: list[LLMMemoItem]
     missing_fields: list[str]
+
 
 class LLMBulkMemoResponse(BaseModel):
     results: list[LLMBulkMemoItemResponse]
