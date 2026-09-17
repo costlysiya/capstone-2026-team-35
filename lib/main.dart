@@ -2883,7 +2883,7 @@ class HomeScreen extends ConsumerWidget {
 
                                   final query = Uri.encodeComponent(searchStr);
                                   final appUrl = Uri.parse(
-                                    'kakaomap:// search?q=$query',
+                                    'kakaomap://search?q=$query',
                                   );
                                   final webUrl = Uri.parse(
                                     'https://map.kakao.com/link/search/$query',
