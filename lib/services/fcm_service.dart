@@ -118,7 +118,7 @@ class FCMService {
     try {
       final dio = Dio();
       final response = await dio.post(
-        'http:// 44.195.33.82:8000/api/notifications/token',
+        'http://44.195.33.82:8000/api/notifications/token',
         data: {'device_token': token},
         options: Options(contentType: 'application/json'),
       );

@@ -1113,7 +1113,7 @@ class HomeScreen extends ConsumerWidget {
     }
     try {
       final dio = Dio();
-      const serverUrl = 'http:// 44.195.33.82:8000/api/analyze/v2';
+      const serverUrl = 'http://44.195.33.82:8000/api/analyze/v2';
 
       final localCategoryIndex = ref.read(selectedCategoryProvider);
       final indexToType = {0: 'SCHEDULE', 1: 'PLACE', 2: 'WISHLIST', 3: 'MEMO'};
@@ -1458,7 +1458,7 @@ class HomeScreen extends ConsumerWidget {
 
     try {
       final dio = Dio();
-      const serverUrl = 'http:// 44.195.33.82:8000/api/analyze/v2';
+      const serverUrl = 'http://44.195.33.82:8000/api/analyze/v2';
 
       final indexToType = {0: 'SCHEDULE', 1: 'PLACE', 2: 'WISHLIST', 3: 'MEMO'};
       final localType = indexToType[draft.category] ?? 'MEMO';
@@ -1739,7 +1739,7 @@ class HomeScreen extends ConsumerWidget {
     ref.read(serverProgressProvider.notifier).state = '🌐 서버 분석 진행중...';
 
     final dio = Dio();
-    const serverUrl = 'http:// 44.195.33.82:8000/api/analyze/batch';
+    const serverUrl = 'http://44.195.33.82:8000/api/analyze/batch';
 
     final indexToType = {0: 'SCHEDULE', 1: 'PLACE', 2: 'WISHLIST', 3: 'MEMO'};
     final now = DateTime.now();
@@ -2820,7 +2820,7 @@ class HomeScreen extends ConsumerWidget {
                                     productName,
                                   );
                                   final url =
-                                      'https:// search.shopping.naver.com/search/all?query=$query';
+                                      'https://search.shopping.naver.com/search/all?query=$query';
                                   try {
                                     await launchUrl(
                                       Uri.parse(url),
@@ -2886,7 +2886,7 @@ class HomeScreen extends ConsumerWidget {
                                     'kakaomap:// search?q=$query',
                                   );
                                   final webUrl = Uri.parse(
-                                    'https:// map.kakao.com/link/search/$query',
+                                    'https://map.kakao.com/link/search/$query',
                                   );
 
                                   try {

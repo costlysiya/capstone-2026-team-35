@@ -71,7 +71,7 @@ class KakaoCalendarService {
       };
 
       final response = await dio.post(
-        'https:// kapi.kakao.com/v2/api/calendar/create/event',
+        'https://kapi.kakao.com/v2/api/calendar/create/event',
         options: Options(
           headers: {
             'Authorization': 'Bearer ${token.accessToken}',
