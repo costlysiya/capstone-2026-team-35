@@ -1,5 +1,5 @@
 """
-Day 24 체크리스트 검증 스크립트
+Day 24 동시성(Concurrency) 제어 테스트 스크립트
 - 체크 1: app/concurrency.py 세마포어 모듈 생성
 - 체크 2: analyze_v2에 call_llm_with_limit 적용
 - 체크 3: 5개 동시 요청 시 3개 병렬 처리 + 2개 대기 동작 확인

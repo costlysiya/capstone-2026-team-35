@@ -1,5 +1,5 @@
 """
-Day 22 체크리스트 검증 스크립트
+Day 22 Batch 분석 기능 테스트 스크립트
 - 체크 1: BatchAnalyzeRequest, BatchAnalyzeResponse 스키마 추가 → import 검증
 - 체크 2: POST /api/analyze/batch 엔드포인트 구현 → 2개 항목 배치 테스트
 - 체크 3: 20개 초과 요청 시 400 에러 반환 확인

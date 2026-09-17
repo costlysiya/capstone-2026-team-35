@@ -34,7 +34,7 @@ def list_results(
     
     results = search_data["items"]
 
-    # fields가 JSON 문자열이므로 딕셔너리로 변환
+    # fields 문자열 파싱
     for r in results:
         if isinstance(r.get("fields"), str):
             try:
@@ -57,19 +57,19 @@ def get_result(id: int):
     if not result:
         raise HTTPException(status_code=404, detail=f"결과 #{id}을(를) 찾을 수 없습니다")
 
-    # fields JSON 파싱
+    # fields 파싱
     if isinstance(result.get("fields"), str):
         try:
             result["fields"] = json.loads(result["fields"])
         except json.JSONDecodeError:
             result["fields"] = {}
 
-    # 확정된(CONFIRMED) 항목의 경우 불필요한 원본 데이터(body) 숨김 처리 (요구사항 반영)
+    # MEMO 카테고리가 CONFIRMED 상태일 경우 보안 및 통신량 절약을 위해 원본 데이터(body) 숨김 처리
     if result.get("status") == "CONFIRMED" and result.get("type") == "MEMO":
         if "body" in result["fields"]:
             result["fields"]["body"] = "[AI 분석 완료 - 원문 숨김 처리됨]"
 
-    # SCHEDULE 타입이면 ical_string 추가
+    # SCHEDULE 타입 시 ical 렌더링 값 추가
     if result.get("type") == "SCHEDULE":
         result["ical_string"] = generate_ics(result["fields"])
 
