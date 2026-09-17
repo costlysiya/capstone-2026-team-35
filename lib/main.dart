@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:kakao_flutter_sdk/kakao_flutter_sdk.dart';
 import 'services/kakao_calendar_service.dart';
@@ -2252,6 +2253,139 @@ class HomeScreen extends ConsumerWidget {
                         const Text('📝 추출 상세 본문', style: TextStyle(fontWeight: FontWeight.bold, color: SoseangTheme.textMuted, fontSize: 12)),
                         const SizedBox(height: 5),
                         Text(card['content'], style: const TextStyle(fontSize: 14, height: 1.4, color: SoseangTheme.textDark)),
+                      ],
+                      if (card['categoryId'] == 2) ...[
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              final productName = card['title']?.toString() ?? '';
+                              if (productName.trim().isEmpty || productName == '제목 없음') {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('검색할 상품명이 없습니다.'))
+                                );
+                                return;
+                              }
+                              final query = Uri.encodeComponent(productName);
+                              final url = 'https://search.shopping.naver.com/search/all?query=$query';
+                              try {
+                                await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                              } catch (e) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('브라우저를 열 수 없습니다.'))
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.search, color: Colors.white, size: 18),
+                            label: const Text('네이버 최저가 검색', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF03C75A),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        ),
+                      ] else if (card['categoryId'] == 1) ...[
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              final placeName = card['title']?.toString() ?? '';
+                              final placeAddress = card['extraInfo']?.toString() ?? '';
+                              String searchStr = placeName;
+                              if (searchStr.trim().isEmpty || searchStr == '제목 없음') {
+                                searchStr = placeAddress;
+                              }
+                              if (searchStr.trim().isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('검색할 장소명이나 주소가 없습니다.'))
+                                );
+                                return;
+                              }
+                              
+                              final query = Uri.encodeComponent(searchStr);
+                              final appUrl = Uri.parse('kakaomap://search?q=$query');
+                              final webUrl = Uri.parse('https://map.kakao.com/link/search/$query');
+                              
+                              try {
+                                final launched = await launchUrl(appUrl, mode: LaunchMode.externalNonBrowserApplication);
+                                if (!launched) {
+                                  await launchUrl(webUrl, mode: LaunchMode.externalApplication);
+                                }
+                              } catch (e) {
+                                await launchUrl(webUrl, mode: LaunchMode.externalApplication);
+                              }
+                            },
+                            icon: const Icon(Icons.map, color: Colors.black87, size: 18),
+                            label: const Text('지도에서 보기 (카카오맵)', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFEE500),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        ),
+                      ] else if (card['categoryId'] == 0) ...[
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              try {
+                                String dateStr = card['extraInfo']?.toString() ?? '';
+                                if (dateStr.trim().isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('일정 날짜 정보가 없습니다.'))
+                                  );
+                                  return;
+                                }
+                                DateTime eventDate;
+                                String cleanDate = dateStr
+                                    .replaceAll('년', '-')
+                                    .replaceAll('월', '-')
+                                    .replaceAll('일', '')
+                                    .replaceAll('.', '-')
+                                    .replaceAll('/', '-')
+                                    .replaceAll(' ', '');
+                                if (cleanDate.endsWith('-')) {
+                                  cleanDate = cleanDate.substring(0, cleanDate.length - 1);
+                                }
+                                eventDate = DateTime.parse(cleanDate);
+                                
+                                bool success = await KakaoCalendarService.createEvent(
+                                  title: card['title']?.toString() ?? '일정',
+                                  startAt: eventDate,
+                                  endAt: eventDate.add(const Duration(hours: 1)),
+                                );
+
+                                if (success) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('톡캘린더에 성공적으로 등록되었습니다! (D-7, D-1 알림 설정 완료)'))
+                                  );
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('카카오 톡캘린더 등록에 실패했습니다.'))
+                                  );
+                                }
+                              } catch (e) {
+                                print("🚀 [DEBUG] Kakao Calendar Error: $e");
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                 const SnackBar(content: Text('날짜 형식을 인식할 수 없습니다.'))
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.calendar_month, color: Colors.black87, size: 18),
+                            label: const Text('카카오 톡캘린더 연동 (알림톡 받기)', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFEE500),
+                              foregroundColor: Colors.black87,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        ),
                       ],
                       const SizedBox(height: 25),
                       Row(
