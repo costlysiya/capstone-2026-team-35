@@ -31,7 +31,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 🎨 소생 앱 디자인 테마 (뮤트파스텔-아이보리-베이지)
+// 🎨 Sortie 디자인 테마 (뮤트파스텔-아이보리-베이지)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 class SoseangTheme {
   // 카테고리별 테마 컬러 (레퍼런스 이미지 추출)
@@ -492,7 +492,7 @@ class HomeScreen extends ConsumerWidget {
           assetId: preservedAssetId,
           status: 'success',
           extractedText: '⚠️ 글자가 없는 이미지입니다.',
-          title: '새로운 소생 카드',
+          title: '새로운 카드',
           content: '',
           category: 3,
           scheduleEndDate: '',
@@ -506,7 +506,7 @@ class HomeScreen extends ConsumerWidget {
       final lowerText = rawText.toLowerCase();
 
       // 2. 1차 오토필 (제목 추출 정확도 개선)
-      String titleText = '새로운 소생 카드';
+      String titleText = '새로운 카드';
       for (final row in rows) {
         final text = row.map((e) => e.text).join(' ').trim();
         if (text.isEmpty) continue;
@@ -683,7 +683,7 @@ class HomeScreen extends ConsumerWidget {
         assetId: preservedAssetId,
         status: 'error',
         extractedText: '❌ 분석 실패: $e',
-        title: '새로운 소생 카드',
+        title: '새로운 카드',
         content: '',
         category: 3,
         scheduleEndDate: '',
@@ -2222,7 +2222,7 @@ class HomeScreen extends ConsumerWidget {
           // itemExtraInfo = MaskingHelper.mask(itemExtraInfo);
 
           debugPrint(
-            '🔒 [소생 앱 E2EE] 다중 아이템 DB 저장 전 암호화 생략 (Title: $itemTitle, Content: $itemContent)',
+            '🔒 [Sortie E2EE] 다중 아이템 DB 저장 전 암호화 생략 (Title: $itemTitle, Content: $itemContent)',
           );
 
           final dbRow = {
