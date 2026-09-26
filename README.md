@@ -359,13 +359,11 @@ sudo systemctl start sss-app
 
 #### 6.1. 프로젝트 소개 자료
 
-> 📎 PPT 링크 추가 예정
+[발표자료](docs/03.발표자료/발표자료.pptx)
 
 #### 6.2. 시연 영상
 
-> 📹 시연 영상 링크 추가 예정
-
-<!-- [![Sortie 시연 영상](https://img.youtube.com/vi/VIDEO_ID/0.jpg)](https://youtu.be/VIDEO_ID) -->
+[![Sortie 시연 영상](https://img.youtube.com/vi/LR4LnQ8bnfQ/0.jpg)](https://youtu.be/LR4LnQ8bnfQ?si=Id3y_k6-qTkCOfds)
 
 ---
 
